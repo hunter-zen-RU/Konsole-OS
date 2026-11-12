@@ -5,11 +5,11 @@ on:
     branches:
       - main
       - master
-    #paths-ignore:
-      #- '*.md'
-      #- '*.txt'
-      #- '.github/**'
-      #- 'docs/**'
+    paths-ignore:
+      - '*.md'
+      - '*.txt'
+      - '.github/**'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
