@@ -115,14 +115,14 @@ jobs:
         echo "Primary Release APK identified: $SOURCE_APK"
         VERSION="${RELEASE_TAG}"
 
-        cp "$SOURCE_APK" tui.apk
+        cp "$SOURCE_APK" Konsole-OS.apk
         cp "$SOURCE_APK" "universal-${VERSION}-release.apk"
 
         for abi in arm64-v8a armeabi-v7a x86 x86_64; do
           cp "$SOURCE_APK" "${abi}-${VERSION}-release.apk"
         done
 
-        echo "Created tui.apk, universal-${VERSION}-release.apk, and per-ABI named copies."
+        echo "Created Konsole-OS.apk, universal-${VERSION}-release.apk, and per-ABI named copies."
 
     - name: Extract Release Notes and Generate Checksums
       id: release_notes
