@@ -81,10 +81,24 @@ android {
             storePassword 'android'
             keyPassword 'android'
         }
+        release {
+            if (System.getenv("KEYSTORE_FILE") && file(System.getenv("KEYSTORE_FILE")).exists()) {
+                storeFile file(System.getenv("KEYSTORE_FILE"))
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "android"
+                keyAlias System.getenv("KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword System.getenv("KEY_PASSWORD") ?: "android"
+            } else {
+                storeFile file("${rootDir}/debug.keystore")
+                keyAlias 'androiddebugkey'
+                storePassword 'android'
+                keyPassword 'android'
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

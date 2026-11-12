@@ -782,9 +782,11 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     private Notification buildNotification() {
         Resources res = getResources();
 
+        int pendingIntentFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+
         // Set pending intent to be launched when notification is clicked
         Intent notificationIntent = TermuxActivity.newInstance(this);
-        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingIntentFlags);
 
 
         // Set notification text
@@ -829,7 +831,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         Intent switchIntent = new Intent(this, TermuxActivity.class);
         switchIntent.setAction("com.termux.app.ACTION_SWITCH_SESSION");
         switchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        builder.addAction(android.R.drawable.ic_menu_sort_by_size, "SWITCH", PendingIntent.getActivity(this, 0, switchIntent, PendingIntent.FLAG_UPDATE_CURRENT));
+        builder.addAction(android.R.drawable.ic_menu_sort_by_size, "SWITCH", PendingIntent.getActivity(this, 0, switchIntent, PendingIntent.FLAG_UPDATE_CURRENT | pendingIntentFlags));
 
 
         // Set Wakelock button actions
@@ -837,7 +839,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         Intent toggleWakeLockIntent = new Intent(this, TermuxService.class).setAction(newWakeAction);
         String actionTitle = res.getString(wakeLockHeld ? R.string.notification_action_wake_unlock : R.string.notification_action_wake_lock);
         int actionIcon = wakeLockHeld ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_lock_lock;
-        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent, 0));
+        builder.addAction(actionIcon, actionTitle, PendingIntent.getService(this, 0, toggleWakeLockIntent, pendingIntentFlags));
 
 
         return builder.build();
