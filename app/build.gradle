@@ -238,5 +238,9 @@ task downloadBootstraps() {
 afterEvaluate {
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+
+        variant.externalNativeBuildProviders.each { provider ->
+            provider.get().dependsOn(downloadBootstraps)
+        }
     }
 }
