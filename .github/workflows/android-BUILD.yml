@@ -1,0 +1,153 @@
+name: Build & Publish Release APK
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on semantic version tags like v1.0.0
+
+permissions:
+  contents: write # Required for creating a release and uploading assets
+
+jobs:
+  Gradle:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Make Gradle Executable
+      run: chmod +x ./gradlew
+
+    - name: Generate debug keystore for Android signing
+      run: |
+        if [ ! -f "$GITHUB_WORKSPACE/debug.keystore" ]; then
+          keytool -genkeypair -v \
+            -keystore "$GITHUB_WORKSPACE/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.workers.max=2 -PGITHUB_REF_NAME="${{ github.ref_name }}"
+
+    - name: Create named APK copies
+      env:
+        VERSION: ${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        cd app/build/outputs/apk/release/
+
+        shopt -s nullglob
+        APK_FILES=( *.apk )
+        if [ "${#APK_FILES[@]}" -ne 1 ]; then
+          echo "Expected exactly one APK from assembleRelease, found ${#APK_FILES[@]}: ${APK_FILES[*]:-none}" >&2
+          exit 1
+        fi
+
+        SOURCE_APK="${APK_FILES[0]}"
+        cp "$SOURCE_APK" tui.apk
+        cp "$SOURCE_APK" "universal-${VERSION}-release.apk"
+
+        # ABI splits are disabled in app/build.gradle, so these are named copies
+        # of the same universal APK, not separately optimized architecture builds.
+        for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+          cp "$SOURCE_APK" "${abi}-${VERSION}-release.apk"
+        done
+
+        echo "Created tui.apk, universal-${VERSION}-release.apk, and per-ABI named copies from ${SOURCE_APK}."
+
+    - name: Extract Release Notes and Generate Checksums
+      id: release_notes
+      env:
+        VERSION: ${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        cd app/build/outputs/apk/release/
+
+        calc_size() {
+          local file=$1
+          ls -lh "$file" | awk '{print $5}'
+        }
+
+        calc_sha() {
+          local file=$1
+          sha256sum "$file" | awk '{print $1}'
+        }
+
+        UNIVERSAL_NAME="universal-${VERSION}-release.apk"
+        ARM64_NAME="arm64-v8a-${VERSION}-release.apk"
+        ARMV7_NAME="armeabi-v7a-${VERSION}-release.apk"
+        X86_NAME="x86-${VERSION}-release.apk"
+        X86_64_NAME="x86_64-${VERSION}-release.apk"
+
+        cat << EOF > "$GITHUB_WORKSPACE/body.md"
+        ### 🚀 Automated Build Details
+
+        * **Release Tag:** \`${{ github.ref_name }}\`
+        * **Commit Reference:** \`${{ github.sha }}\`
+        * **Triggered By:** @${{ github.actor }}
+        * **Build Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        * **Pipeline Source:** [Job Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+        ---
+
+        ### 📦 APK Assets
+
+        ABI splits are disabled for this build. The architecture-named assets below are copies of the same universal APK, not separately optimized builds.
+
+        | Asset | Build Size | SHA-256 |
+        | :--- | :--- | :--- |
+        | \`${UNIVERSAL_NAME}\` (universal) | \`$(calc_size "$UNIVERSAL_NAME")\` | \`$(calc_sha "$UNIVERSAL_NAME")\` |
+        | \`${ARM64_NAME}\` | \`$(calc_size "$ARM64_NAME")\` | \`$(calc_sha "$ARM64_NAME")\` |
+        | \`${ARMV7_NAME}\` | \`$(calc_size "$ARMV7_NAME")\` | \`$(calc_sha "$ARMV7_NAME")\` |
+        | \`${X86_NAME}\` | \`$(calc_size "$X86_NAME")\` | \`$(calc_sha "$X86_NAME")\` |
+        | \`${X86_64_NAME}\` | \`$(calc_size "$X86_64_NAME")\` | \`$(calc_sha "$X86_64_NAME")\` |
+        | \`tui.apk\` | \`$(calc_size "tui.apk")\` | \`$(calc_sha "tui.apk")\` |
+
+        ---
+
+        ### 📝 Changelog
+
+        For full update details and commit history, see [the commits for this release](${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }}).
+
+        ### 📥 Installation
+
+        Download the universal APK or an ABI-named copy above, then install it on your Android device. The ABI-named files are identical copies of the universal APK.
+        EOF
+
+        if [ -f "$GITHUB_WORKSPACE/fix-bug.md" ]; then
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "### 🐛 Bug Fixes and New Features"
+            echo ""
+            cat "$GITHUB_WORKSPACE/fix-bug.md"
+            echo ""
+          } >> "$GITHUB_WORKSPACE/body.md"
+        else
+          echo "Error: fix-bug.md not found in repo root!" >&2
+          exit 1
+        fi
+
+    - name: Create Release and Upload APKs
+      uses: softprops/action-gh-release@v2
+      with:
+        name: "Release ${{ github.ref_name }}"
+        body_path: body.md
+        fail_on_unmatched_files: true
+        files: app/build/outputs/apk/release/*.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

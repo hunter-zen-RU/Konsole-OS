@@ -1,0 +1,95 @@
+name: Build & Publish Rolling Debug APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    #paths-ignore:
+      #- '*.md'
+      #- '*.txt'
+      #- '.github/**'
+      #- 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write # Required to update the 'debug' release tag and assets
+
+jobs:
+  Build-Debug:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Make Gradle Executable
+      run: chmod +x ./gradlew
+
+    - name: Restore debug keystore for consistent Android signing
+      run: |
+        if [ -f "$GITHUB_WORKSPACE/debug.keystore.base64" ]; then
+          base64 -d "$GITHUB_WORKSPACE/debug.keystore.base64" > "$GITHUB_WORKSPACE/debug.keystore"
+        elif [ ! -f "$GITHUB_WORKSPACE/debug.keystore" ]; then
+          keytool -genkeypair -v \
+            -keystore "$GITHUB_WORKSPACE/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.workers.max=2
+
+    - name: Rename and Format APK with Dynamic Timestamp
+      id: rename_apk
+      run: |
+        cd app/build/outputs/apk/debug/
+        
+        # Generate timestamp in YYYYMMDD-HHMM format
+        TIMESTAMP=$(date -u '+%Y%m%d-%H%M')
+        HUMAN_TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        NEW_NAME="Debug-${TIMESTAMP}.apk"
+        
+        # Locate the default generated debug APK
+        DEFAULT_APK=$(ls *.apk 2>/dev/null | head -n 1)
+        
+        if [ -f "$DEFAULT_APK" ]; then
+          mv "$DEFAULT_APK" "$NEW_NAME"
+          echo "Renamed $DEFAULT_APK to $NEW_NAME"
+          
+          # Pass dynamic outputs downstream
+          echo "apk_name=$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "apk_path=app/build/outputs/apk/debug/$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "timestamp=$HUMAN_TIMESTAMP" >> $GITHUB_OUTPUT
+        else
+          echo "Error: Debug APK not found!" && exit 1
+        fi
+
+    - name: Upload Rolling Debug Release Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: debug
+        name: "Latest Debug Build"
+        body: |
+          ### 🛠️ Automated Rolling Debug Release
+          This release contains the latest debug compilation snapshot.
+          
+          * **File Name:** `${{ steps.rename_apk.outputs.apk_name }}`
+          * **Last Updated:** `${{ steps.rename_apk.outputs.timestamp }}`
+          * **Triggered by Commit:** `${{ github.sha }}`
+        files: ${{ steps.rename_apk.outputs.apk_path }}
+        make_latest: false
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
