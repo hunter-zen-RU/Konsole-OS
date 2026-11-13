@@ -128,4 +128,47 @@ public class ControlSequenceIntroducerTest extends TerminalTestCase {
         assertEquals(TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE, mTerminal.mEffect);
     }
 
+    public void testModifyOtherKeys() {
+        final java.util.List<String> loggedErrors = new java.util.ArrayList<>();
+        TerminalSessionClient errorSpyClient = new TerminalSessionClient() {
+            @Override public void onTextChanged(TerminalSession changedSession) {}
+            @Override public void onTitleChanged(TerminalSession changedSession) {}
+            @Override public void onSessionFinished(TerminalSession finishedSession) {}
+            @Override public void onCopyTextToClipboard(TerminalSession session, String text) {}
+            @Override public void onPasteTextFromClipboard(TerminalSession session) {}
+            @Override public void onBell(TerminalSession session) {}
+            @Override public void onColorsChanged(TerminalSession session) {}
+            @Override public void onTerminalCursorStateChange(boolean state) {}
+            @Override public void setTerminalShellPid(TerminalSession session, int pid) {}
+            @Override public Integer getTerminalCursorStyle() { return TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK; }
+            @Override public void logError(String tag, String message) { loggedErrors.add(tag + ": " + message); }
+            @Override public void logWarn(String tag, String message) {}
+            @Override public void logInfo(String tag, String message) {}
+            @Override public void logDebug(String tag, String message) {}
+            @Override public void logVerbose(String tag, String message) {}
+            @Override public void logStackTraceWithMessage(String tag, String message, Exception e) {}
+            @Override public void logStackTrace(String tag, Exception e) {}
+        };
+        mTerminal = new TerminalEmulator(mOutput, 20, 5,
+            TerminalTestCase.INITIAL_CELL_WIDTH_PIXELS,
+            TerminalTestCase.INITIAL_CELL_HEIGHT_PIXELS,
+            10, errorSpyClient);
+
+        assertEquals(0, mTerminal.getModifyOtherKeys());
+        enterString("\033[>4;1m");
+        assertEquals(1, mTerminal.getModifyOtherKeys());
+        assertEnteringStringGivesResponse("\033[?4m", "\033[>4;1m");
+
+        // Fish sends CSI > 4 m (implicit -1 value) to reset modifyOtherKeys before executing commands
+        enterString("\033[>4m");
+        assertEquals(0, mTerminal.getModifyOtherKeys());
+        assertEnteringStringGivesResponse("\033[?4m", "\033[>4;0m");
+
+        enterString("\033[>4;2m");
+        assertEquals(2, mTerminal.getModifyOtherKeys());
+        enterString("\033[>m");
+        assertEquals(0, mTerminal.getModifyOtherKeys());
+        assertTrue("Expected no error logs from Fish modifyOtherKeys sequences, got: " + loggedErrors, loggedErrors.isEmpty());
+    }
+
 }

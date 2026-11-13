@@ -57,13 +57,10 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
             return sessionRowView;
         }
 
-        boolean shouldEnableDarkTheme = ThemeUtils.shouldEnableDarkTheme(mActivity, NightMode.getAppNightMode().getName());
-
-        if (shouldEnableDarkTheme) {
-            sessionTitleView.setBackground(
-                ContextCompat.getDrawable(mActivity, R.drawable.session_background_black_selected)
-            );
-        }
+        sessionTitleView.setBackground(
+            ContextCompat.getDrawable(mActivity, R.drawable.session_background_black_selected)
+        );
+        sessionTitleView.setTypeface(Typeface.MONOSPACE);
 
         String name = sessionAtRow.mSessionName;
         String sessionTitle = sessionAtRow.getTitle();
@@ -86,8 +83,8 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
         } else {
             sessionTitleView.setPaintFlags(sessionTitleView.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
         }
-        int defaultColor = shouldEnableDarkTheme ? Color.WHITE : Color.BLACK;
-        int color = sessionRunning || sessionAtRow.getExitStatus() == 0 ? defaultColor : Color.RED;
+        int defaultColor = Color.parseColor("#E6EDF3");
+        int color = sessionRunning || sessionAtRow.getExitStatus() == 0 ? defaultColor : Color.parseColor("#FF7B72");
         sessionTitleView.setTextColor(color);
         return sessionRowView;
     }

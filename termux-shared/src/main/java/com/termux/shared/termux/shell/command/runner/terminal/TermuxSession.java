@@ -93,7 +93,7 @@ public class TermuxSession {
         boolean isLoginShell = false;
         if (executionCommand.executable == null) {
             if (!executionCommand.isFailsafe) {
-                for (String shellBinary : new String[]{"bash", "sh", "zsh", "fish", "login"}) {
+                for (String shellBinary : new String[]{"fish", "bash", "zsh", "sh", "login"}) {
                     File shellFile = new File(defaultBinPath, shellBinary);
                     if (shellFile.canExecute()) {
                         executionCommand.executable = shellFile.getAbsolutePath();

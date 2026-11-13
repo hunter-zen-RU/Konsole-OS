@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#B804070B"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:id="@+id/konsole_palette_card"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_terminal_modal"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp"
+                android:text="●"
+                android:textColor="#00E5FF"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="COMMAND PALETTE"
+                    android:textColor="#E6EDF3"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="Shortcuts · Packages · Aliases · Apps"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/konsole_palette_close"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:minWidth="56dp"
+                android:background="@drawable/bg_hud_chip_amber"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:fontFamily="monospace"
+                android:text="ESC"
+                android:textColor="#FF7B72"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:contentDescription="Close Command Palette" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_terminal_input"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp"
+                android:text="❯"
+                android:textColor="#00E5FF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/konsole_palette_search"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:fontFamily="monospace"
+                android:hint="Search commands, packages, aliases, apps..."
+                android:imeOptions="actionGo"
+                android:inputType="text"
+                android:singleLine="true"
+                android:textColor="#00FF88"
+                android:textColorHint="#6E7681"
+                android:textSize="13.5sp" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/konsole_palette_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="#18222E"
+            android:dividerHeight="1dp" />
+
+    </LinearLayout>
+
+</FrameLayout>

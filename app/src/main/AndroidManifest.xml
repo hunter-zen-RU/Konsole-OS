@@ -121,6 +121,24 @@
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
 
         <activity
+            android:name=".app.konsole.KonsoleDashboardActivity"
+            android:exported="false"
+            android:label="@string/title_konsole_dashboard"
+            android:parentActivityName=".app.TermuxActivity"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".app.konsole.KonsoleMacroLabActivity"
+            android:exported="false"
+            android:label="@string/title_konsole_macro_lab"
+            android:parentActivityName=".app.TermuxActivity"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar"
+            tools:targetApi="n" />
+
+        <activity
             android:name=".shared.activities.ReportActivity"
             android:theme="@style/Theme.MarkdownViewActivity.DayNight"
             android:documentLaunchMode="intoExisting" />
@@ -193,6 +211,16 @@
             android:grantUriPermissions="true"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND" />
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${TERMUX_PACKAGE_NAME}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
 
         <receiver
             android:name=".app.TermuxOpenReceiver"
@@ -207,7 +235,7 @@
         </receiver>
 
         <receiver
-            android:name=".konsole.KonsoleDeviceAdminReceiver"
+            android:name=".app.konsole.KonsoleDeviceAdminReceiver"
             android:description="@string/application_name"
             android:label="@string/application_name"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
@@ -224,6 +252,14 @@
             android:name=".shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".app.konsole.KonsoleCronAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.termux.konsole.ACTION_CRON_ALARM" />
+            </intent-filter>
+        </receiver>
+
 
         <service
             android:name=".app.TermuxService"
@@ -236,6 +272,29 @@
             <intent-filter>
                 <action android:name="${TERMUX_PACKAGE_NAME}.RUN_COMMAND" />
             </intent-filter>
+        </service>
+
+        <service
+            android:name=".app.konsole.KonsoleNotificationListenerService"
+            android:exported="true"
+            android:label="@string/konsole_notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".app.konsole.KonsoleAutomationAccessibilityService"
+            android:exported="true"
+            android:label="@string/konsole_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/konsole_accessibility_service" />
         </service>
 
 

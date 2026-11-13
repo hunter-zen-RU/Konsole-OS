@@ -77,8 +77,8 @@ jobs:
         else
           echo "Using existing debug.keystore"
         fi
-    -  name: Download Bootstrap Archives
-       run: ./gradlew downloadBootstraps --no-daemon
+    - name: Download Bootstrap Archives
+      run: ./gradlew downloadBootstraps --no-daemon
   
     - name: Build Release APK
       run: |
@@ -169,7 +169,7 @@ jobs:
         | \`${ARMV7_NAME}\` | \`$(calc_size "$ARMV7_NAME")\` | \`$(calc_sha "$ARMV7_NAME")\` |
         | \`${X86_NAME}\` | \`$(calc_size "$X86_NAME")\` | \`$(calc_sha "$X86_NAME")\` |
         | \`${X86_64_NAME}\` | \`$(calc_size "$X86_64_NAME")\` | \`$(calc_sha "$X86_64_NAME")\` |
-        | \`tui.apk\` | \`$(calc_size "tui.apk")\` | \`$(calc_sha "tui.apk")\` |
+        | \`Konsole-OS.apk\` | \`$(calc_size "Konsole-OS.apk")\` | \`$(calc_sha "Konsole-OS.apk")\` |
 
         ---
 

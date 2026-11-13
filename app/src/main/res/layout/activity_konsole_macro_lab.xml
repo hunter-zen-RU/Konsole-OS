@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/macro_lab_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#080C10"
+    android:orientation="vertical">
+
+    <!-- Top Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#0D1117"
+        android:gravity="center_vertical"
+        android:minHeight="60dp"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="8dp">
+
+        <ImageButton
+            android:id="@+id/macro_lab_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back from Macro Lab"
+            android:padding="12dp"
+            android:src="@drawable/ic_back_arrow"
+            app:tint="#E6EDF3" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="KONSOLE MACRO LAB"
+                android:textColor="#00E5FF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/macro_lab_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:maxLines="1"
+                android:text="Triggers · Constraints · Cron · CLI Bridge"
+                android:textColor="#8B949E"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/macro_lab_new_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_hud_chip_cyan"
+            android:contentDescription="Create new automation macro"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:minWidth="88dp"
+            android:paddingHorizontal="14dp"
+            android:text="+ NEW MACRO"
+            android:textColor="#00E5FF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1F2D3D" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:id="@+id/macro_lab_content_column"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- ENGINE & SENSOR STATUS CARD -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/macro_engine_status_chip"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_hud_chip_green"
+                            android:fontFamily="monospace"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="4dp"
+                            android:text="ENGINE: ACTIVE"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/macro_store_path_label"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:ellipsize="middle"
+                            android:fontFamily="monospace"
+                            android:gravity="end"
+                            android:maxLines="1"
+                            android:paddingStart="10dp"
+                            android:text="macros.json"
+                            android:textColor="#8B949E"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/macro_notif_access_btn"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Configure notification listener access"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:paddingHorizontal="8dp"
+                            android:text="NOTIF SENSOR: OFF"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/macro_a11y_access_btn"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Configure optional accessibility gestures and app open sensor"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:paddingHorizontal="8dp"
+                            android:text="A11Y GESTURES: OFF"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:fontFamily="monospace"
+                        android:text="CLI Bridge: run 'macro trigger &lt;name&gt;' or 'macro notify' inside Fish scripts."
+                        android:textColor="#9FB0C3"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <!-- STARTER TEMPLATES -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="QUICK TEMPLATES (TAP TO ADD &amp; CUSTOMIZE)"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/macro_templates_strip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <!-- CONFIGURED MACROS -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:layout_marginBottom="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/macro_list_header"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:letterSpacing="0.08"
+                        android:text="SAVED MACROS &amp; CRON JOBS"
+                        android:textColor="#8B949E"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/macro_snapshot_btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_dashboard_chip"
+                        android:contentDescription="Inspect current device constraint snapshot"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:paddingHorizontal="12dp"
+                        android:text="DEVICE SNAPSHOT"
+                        android:textColor="#00E5FF"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/macro_list_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- TEST OUTPUT CONSOLE & EXECUTION LOG -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:layout_marginBottom="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:letterSpacing="0.08"
+                        android:text="LIVE TEST CONSOLE &amp; HISTORY"
+                        android:textColor="#8B949E"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/macro_clear_log_btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_dashboard_chip"
+                        android:contentDescription="Clear macro execution history log"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:paddingHorizontal="12dp"
+                        android:text="CLEAR LOG"
+                        android:textColor="#FFD166"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:id="@+id/macro_test_console_output"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="3dp"
+                        android:text="Ready. Tap TEST or FORCE RUN on any macro to inspect constraint verdicts, variable injection, and command output."
+                        android:textColor="#E6EDF3"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

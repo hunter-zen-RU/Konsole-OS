@@ -2,6 +2,7 @@ package com.termux.terminal;
 
 import android.annotation.SuppressLint;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -190,6 +191,8 @@ public final class TerminalSession extends TerminalOutput {
         String getPrompt(TerminalSession session);
         int getCommandStatus(String firstWord);
         String predictSuggestion(String currentInput);
+        default boolean isInterceptionActive(TerminalSession session) { return true; }
+        default String getHistoryEntry(int index) { return null; }
     }
 
     private static KonsoleInputInterceptor sInputInterceptor;
@@ -199,13 +202,23 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     private final StringBuilder mKonsoleLineBuffer = new StringBuilder();
+    private int mKonsoleHistoryIndex = -1;
 
     public void appendToEmulator(String text) {
         if (text == null || text.isEmpty()) return;
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        if (mEmulator != null) {
-            mEmulator.append(bytes, bytes.length);
-            notifyScreenUpdate();
+        final byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (mEmulator != null) {
+                mEmulator.append(bytes, bytes.length);
+                notifyScreenUpdate();
+            }
+        } else {
+            mMainThreadHandler.post(() -> {
+                if (mEmulator != null) {
+                    mEmulator.append(bytes, bytes.length);
+                    notifyScreenUpdate();
+                }
+            });
         }
     }
 
@@ -223,9 +236,15 @@ public final class TerminalSession extends TerminalOutput {
             return;
         }
 
-        String[] parts = line.split("\\s+", 2);
-        String firstWord = parts[0];
-        String rest = parts.length > 1 ? " " + parts[1] : "";
+        int firstSpaceIdx = -1;
+        for (int i = 0; i < line.length(); i++) {
+            if (Character.isWhitespace(line.charAt(i))) {
+                firstSpaceIdx = i;
+                break;
+            }
+        }
+        String firstWord = firstSpaceIdx == -1 ? line : line.substring(0, firstSpaceIdx);
+        String rest = firstSpaceIdx == -1 ? "" : line.substring(firstSpaceIdx);
 
         int status = sInputInterceptor.getCommandStatus(firstWord);
         String color;
@@ -256,46 +275,115 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (sInputInterceptor != null) {
+        if (data == null || count <= 0) return;
+
+        boolean shouldIntercept = sInputInterceptor != null
+            && sInputInterceptor.isInterceptionActive(this)
+            && (mEmulator == null || !mEmulator.isAlternateBufferActive());
+
+        if (shouldIntercept) {
+            if (count == 1 && (data[offset] == 3 || data[offset] == 4 || data[offset] == 26)) {
+                byte ctrl = data[offset];
+                if (ctrl == 3 && mKonsoleLineBuffer.length() > 0) {
+                    mKonsoleLineBuffer.setLength(0);
+                    mKonsoleHistoryIndex = -1;
+                    String prompt = sInputInterceptor.getPrompt(this);
+                    if (prompt == null || prompt.isEmpty()) prompt = "$ ";
+                    appendToEmulator("^C\r\n" + prompt);
+                    return;
+                }
+                mKonsoleLineBuffer.setLength(0);
+                mKonsoleHistoryIndex = -1;
+                if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
+                return;
+            }
+
+            if (count == 1 && data[offset] == 12) { // Ctrl+L clear screen & redraw buffer
+                appendToEmulator("\033[H\033[2J");
+                redrawCurrentInputLine();
+                return;
+            }
+
+            String seq = new String(data, offset, count, StandardCharsets.UTF_8);
+
+            // Handle arrow navigation & autocomplete sequences cleanly
+            if ("\033[C".equals(seq) || "\033OC".equals(seq)) {
+                String ghost = sInputInterceptor.predictSuggestion(mKonsoleLineBuffer.toString());
+                if (ghost != null && !ghost.isEmpty() && !ghost.startsWith(" (")) {
+                    int hintIdx = ghost.indexOf(" (install");
+                    String accept = hintIdx > 0 ? ghost.substring(0, hintIdx) : ghost;
+                    mKonsoleLineBuffer.append(accept);
+                    mKonsoleHistoryIndex = -1;
+                    redrawCurrentInputLine();
+                }
+                return;
+            } else if ("\033[A".equals(seq) || "\033OA".equals(seq)) {
+                String entry = sInputInterceptor.getHistoryEntry(mKonsoleHistoryIndex + 1);
+                if (entry != null) {
+                    mKonsoleHistoryIndex++;
+                    mKonsoleLineBuffer.setLength(0);
+                    mKonsoleLineBuffer.append(entry);
+                    redrawCurrentInputLine();
+                }
+                return;
+            } else if ("\033[B".equals(seq) || "\033OB".equals(seq)) {
+                if (mKonsoleHistoryIndex > 0) {
+                    mKonsoleHistoryIndex--;
+                    String entry = sInputInterceptor.getHistoryEntry(mKonsoleHistoryIndex);
+                    if (entry != null) {
+                        mKonsoleLineBuffer.setLength(0);
+                        mKonsoleLineBuffer.append(entry);
+                        redrawCurrentInputLine();
+                    }
+                } else if (mKonsoleHistoryIndex == 0) {
+                    mKonsoleHistoryIndex = -1;
+                    mKonsoleLineBuffer.setLength(0);
+                    redrawCurrentInputLine();
+                }
+                return;
+            } else if (data[offset] == 27) {
+                // Ignore unhandled escape/function key sequences without corrupting input buffer
+                return;
+            }
+
             boolean hasEnter = false;
             boolean lineChanged = false;
 
-            String seq = new String(data, offset, count, StandardCharsets.UTF_8);
-            boolean isArrowOrTabSeq = seq.contains("\033[C") || seq.contains("\033OC") || seq.contains("[C") ||
-                                      seq.contains("\033[D") || seq.contains("\033OD") || seq.contains("[D");
-
-            if (isArrowOrTabSeq) {
-                String ghost = sInputInterceptor.predictSuggestion(mKonsoleLineBuffer.toString());
-                if (ghost != null && !ghost.isEmpty() && !ghost.startsWith(" (install:")) {
-                    mKonsoleLineBuffer.append(ghost);
-                    lineChanged = true;
-                }
-            }
-
-            for (int i = offset; i < offset + count; i++) {
-                byte b = data[i];
-                if (b == 13 || b == 10) { // Enter
+            int i = 0;
+            while (i < seq.length()) {
+                int cp = seq.codePointAt(i);
+                int charCount = Character.charCount(cp);
+                if (cp == 13 || cp == 10) { // Enter
                     hasEnter = true;
-                } else if (b == 9) { // Tab key completion
+                } else if (cp == 9) { // Tab completion
                     String ghost = sInputInterceptor.predictSuggestion(mKonsoleLineBuffer.toString());
-                    if (ghost != null && !ghost.isEmpty() && !ghost.startsWith(" (install:")) {
-                        mKonsoleLineBuffer.append(ghost);
+                    if (ghost != null && !ghost.isEmpty() && !ghost.startsWith(" (")) {
+                        int hintIdx = ghost.indexOf(" (install");
+                        String accept = hintIdx > 0 ? ghost.substring(0, hintIdx) : ghost;
+                        mKonsoleLineBuffer.append(accept);
+                        mKonsoleHistoryIndex = -1;
                         lineChanged = true;
                     }
-                } else if (b == 8 || b == 127) { // Backspace
-                    if (mKonsoleLineBuffer.length() > 0) {
-                        mKonsoleLineBuffer.deleteCharAt(mKonsoleLineBuffer.length() - 1);
+                } else if (cp == 8 || cp == 127) { // Backspace
+                    int len = mKonsoleLineBuffer.length();
+                    if (len > 0) {
+                        int prevStart = Character.offsetByCodePoints(mKonsoleLineBuffer, len, -1);
+                        mKonsoleLineBuffer.delete(prevStart, len);
+                        mKonsoleHistoryIndex = -1;
                         lineChanged = true;
                     }
-                } else if (b >= 32 && b <= 126 && !isArrowOrTabSeq) { // Printable chars
-                    mKonsoleLineBuffer.append((char) b);
+                } else if (!Character.isISOControl(cp)) { // Printable UTF-8 characters
+                    mKonsoleLineBuffer.appendCodePoint(cp);
+                    mKonsoleHistoryIndex = -1;
                     lineChanged = true;
                 }
+                i += charCount;
             }
 
             if (hasEnter) {
                 String line = mKonsoleLineBuffer.toString();
                 mKonsoleLineBuffer.setLength(0);
+                mKonsoleHistoryIndex = -1;
                 appendToEmulator("\r\n");
                 if (sInputInterceptor.onInterceptCommand(this, line)) {
                     // Command handled natively by Konsole OS.

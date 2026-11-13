@@ -4,6 +4,8 @@ import android.content.Context;
 import android.os.Environment;
 import android.util.Log;
 
+import com.termux.shared.termux.TermuxConstants;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -263,6 +265,7 @@ public class KonsoleConfigManager {
     public synchronized void setUserVariable(String name, String value) {
         mUserVariables.put(name, value);
         saveVariablesToXml();
+        KonsoleFishBridge.syncStateFiles(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
     }
 
     private void saveVariablesToXml() {
@@ -276,17 +279,32 @@ public class KonsoleConfigManager {
         writeTextToFileSafely(FILE_VARIABLES_XML, sb.toString());
     }
 
-    public synchronized void setBehaviorMode(String mode) {
-        mBehaviorProperties.put("mode", mode);
+    public synchronized void setUiProperty(String key, String value) {
+        if (key == null || key.trim().isEmpty()) return;
+        mUiProperties.put(key.trim(), value != null ? value.trim() : "");
+        savePropertiesToXml(FILE_UI_XML, "ui", mUiProperties);
+    }
+
+    private void savePropertiesToXml(String filePath, String rootTag, Map<String, String> properties) {
         StringBuilder sb = new StringBuilder();
-        sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<behavior>\n");
-        for (Map.Entry<String, String> entry : mBehaviorProperties.entrySet()) {
+        sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<").append(rootTag).append(">\n");
+        for (Map.Entry<String, String> entry : properties.entrySet()) {
             sb.append("    <").append(entry.getKey()).append(">")
                     .append(escapeXml(entry.getValue()))
                     .append("</").append(entry.getKey()).append(">\n");
         }
-        sb.append("</behavior>\n");
-        writeTextToFileSafely(FILE_BEHAVIOR_XML, sb.toString());
+        sb.append("</").append(rootTag).append(">\n");
+        writeTextToFileSafely(filePath, sb.toString());
+    }
+
+    public boolean isStatusBarVisible() {
+        return !"false".equalsIgnoreCase(mUiProperties.getOrDefault("statusBarVisible", "true"));
+    }
+
+    public synchronized void setBehaviorMode(String mode) {
+        mBehaviorProperties.put("mode", mode);
+        savePropertiesToXml(FILE_BEHAVIOR_XML, "behavior", mBehaviorProperties);
+        KonsoleFishBridge.syncStateFiles(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
     }
 
     public String getMode() {

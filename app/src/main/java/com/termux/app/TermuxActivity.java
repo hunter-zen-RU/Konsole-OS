@@ -284,31 +284,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // app has been opened.
         TermuxUtils.sendTermuxOpenedBroadcast(this);
 
-        // Initialize Konsole OS Engine & Telemetry
+        // Initialize Konsole OS Engine, Telemetry & Fish IPC Bridge (native Fish shell handles PTY input)
         com.termux.app.konsole.KonsoleConfigManager.getInstance().init(this);
         com.termux.app.konsole.KonsoleTelemetryManager.getInstance().start(this);
         com.termux.app.konsole.KonsoleGhostTextRenderer.getInstance().init(this);
-        com.termux.terminal.TerminalSession.setInputInterceptor(new com.termux.terminal.TerminalSession.KonsoleInputInterceptor() {
-            @Override
-            public boolean onInterceptCommand(com.termux.terminal.TerminalSession session, String command) {
-                return com.termux.app.konsole.KonsoleCommandDispatcher.getInstance().handleCommand(TermuxActivity.this, session, command);
-            }
-
-            @Override
-            public String getPrompt(com.termux.terminal.TerminalSession session) {
-                return com.termux.app.konsole.KonsoleCommandDispatcher.getInstance().getPrompt(session);
-            }
-
-            @Override
-            public int getCommandStatus(String firstWord) {
-                return com.termux.app.konsole.KonsoleGhostTextRenderer.getInstance().getCommandStatus(firstWord);
-            }
-
-            @Override
-            public String predictSuggestion(String currentInput) {
-                return com.termux.app.konsole.KonsoleGhostTextRenderer.getInstance().predictSuggestion(currentInput);
-            }
-        });
+        com.termux.app.konsole.KonsoleFishBridge.getInstance().setActiveActivity(this);
+        com.termux.app.konsole.KonsoleFishBridge.getInstance().startIfBootstrapReady(this);
+        setupKonsoleHudBar();
+        com.termux.terminal.TerminalSession.setInputInterceptor(null);
         requestKonsolePermissions();
         if (getIntent() != null && "com.termux.app.ACTION_SWITCH_SESSION".equals(getIntent().getAction())) {
             showSessionsOverlayDialog();
@@ -397,7 +380,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mPreferences.isTerminalMarginAdjustmentEnabled())
             addTermuxActivityRootViewGlobalLayoutListener();
 
+        com.termux.app.konsole.KonsoleFishBridge.getInstance().setActiveActivity(this);
         registerTermuxActivityBroadcastReceiver();
+        refreshKonsoleHudVisibility();
+        startHudTicker();
     }
 
     @Override
@@ -408,11 +394,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mIsInvalidState) return;
 
+        com.termux.app.konsole.KonsoleFishBridge.getInstance().setActiveActivity(this);
+
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();
 
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onResume();
+
+        syncPreferencesToTerminalUi();
 
         // Check if a crash happened on last run of the app or if a plugin crashed and show a
         // notification with the crash details if it did
@@ -430,6 +420,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mIsInvalidState) return;
 
         mIsVisible = false;
+
+        stopHudTicker();
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onStop();
@@ -450,6 +442,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logDebug(LOG_TAG, "onDestroy");
 
         com.termux.app.konsole.KonsoleTelemetryManager.getInstance().stop();
+        com.termux.app.konsole.KonsoleFishBridge.getInstance().setActiveActivity(null);
 
         if (mIsInvalidState) return;
 
@@ -499,6 +492,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             if (mIsVisible) {
                 TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> {
                     if (mTermuxService == null) return; // Activity might have been destroyed.
+                    com.termux.app.konsole.KonsoleFishBridge.getInstance().start(TermuxActivity.this);
                     try {
                         boolean launchFailsafe = false;
                         if (intent != null && intent.getExtras() != null) {
@@ -514,6 +508,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 finishActivityIfNotFinishing();
             }
         } else {
+            com.termux.app.konsole.KonsoleFishBridge.getInstance().startIfBootstrapReady(this);
             // If termux was started from launcher "New session" shortcut and activity is recreated,
             // then the original intent will be re-delivered, resulting in a new session being re-added
             // each time.
@@ -669,6 +664,38 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         settingsButton.setOnClickListener(v -> {
             ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
         });
+
+        View dashboardButton = findViewById(R.id.dashboard_button);
+        if (dashboardButton != null) {
+            dashboardButton.setOnClickListener(v -> {
+                getDrawer().closeDrawers();
+                openDashboardActivity();
+            });
+        }
+    }
+
+    public void openDashboardActivity() {
+        startActivity(new Intent(this, com.termux.app.konsole.KonsoleDashboardActivity.class));
+    }
+
+    private void syncPreferencesToTerminalUi() {
+        if (mPreferences == null) return;
+        if (mTerminalView != null) {
+            mTerminalView.setTextSize(mPreferences.getFontSize());
+            mTerminalView.setKeepScreenOn(mPreferences.shouldKeepScreenOn());
+        }
+        ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
+        if (terminalToolbarViewPager != null) {
+            terminalToolbarViewPager.setVisibility(mPreferences.shouldShowTerminalToolbar() ? View.VISIBLE : View.GONE);
+        }
+        if (mPreferences.isTerminalMarginAdjustmentEnabled()) {
+            removeTermuxActivityRootViewGlobalLayoutListener();
+            addTermuxActivityRootViewGlobalLayoutListener();
+        } else {
+            removeTermuxActivityRootViewGlobalLayoutListener();
+        }
+        refreshKonsoleHudVisibility();
+        updateKonsoleHudContent();
     }
 
     private void setNewSessionButtonView() {
@@ -712,6 +739,156 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         } else {
             finishActivityIfNotFinishing();
         }
+    }
+
+    private android.os.Handler mHudHandler;
+    private android.widget.TextView mHudModeView;
+    private android.widget.TextView mHudTelemetryView;
+    private final Runnable mHudUpdateRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mIsVisible) return;
+            updateKonsoleHudContent();
+            if (mHudHandler != null) {
+                mHudHandler.postDelayed(this, 1000);
+            }
+        }
+    };
+
+    private void setupKonsoleHudBar() {
+        mHudHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        mHudModeView = findViewById(R.id.konsole_hud_mode);
+        mHudTelemetryView = findViewById(R.id.konsole_hud_telemetry);
+        View dashboardBtn = findViewById(R.id.konsole_hud_dashboard);
+        View appsBtn = findViewById(R.id.konsole_hud_apps);
+        View paletteBtn = findViewById(R.id.konsole_hud_palette);
+
+        if (mHudModeView != null) {
+            mHudModeView.setOnClickListener(v -> {
+                com.termux.app.konsole.KonsoleConfigManager cfg = com.termux.app.konsole.KonsoleConfigManager.getInstance();
+                String current = cfg.getMode();
+                String next = "konsole".equalsIgnoreCase(current) ? "termux" : "konsole";
+                cfg.setBehaviorMode(next);
+                com.termux.app.konsole.KonsoleFishBridge.syncStateFiles(this);
+                updateKonsoleHudContent();
+                TerminalSession session = getCurrentSession();
+                if (session != null) {
+                    session.write("\r");
+                }
+                showToast("Mode switched to " + next.toUpperCase(), false);
+            });
+        }
+        if (mHudTelemetryView != null) {
+            mHudTelemetryView.setOnClickListener(v -> openDashboardActivity());
+        }
+        if (dashboardBtn != null) {
+            dashboardBtn.setOnClickListener(v -> openDashboardActivity());
+        }
+        if (appsBtn != null) {
+            appsBtn.setOnClickListener(v -> {
+                TerminalSession session = getCurrentSession();
+                new com.termux.app.konsole.KonsoleAppsDialog(this, (appName, pkg) -> {
+                    if (session != null) {
+                        session.appendToEmulator("\r\n\033[1;32m[Konsole OS]\033[0m Launched \033[1;36m" + appName + "\033[0m (" + pkg + ")\r\n");
+                    }
+                }).show();
+            });
+        }
+        if (paletteBtn != null) {
+            paletteBtn.setOnClickListener(v -> showCommandPaletteDialog());
+        }
+        refreshKonsoleHudVisibility();
+        updateKonsoleHudContent();
+    }
+
+    public void refreshKonsoleHudVisibility() {
+        View hudBar = findViewById(R.id.konsole_hud_bar);
+        if (hudBar == null) return;
+        boolean visible = com.termux.app.konsole.KonsoleConfigManager.getInstance().isStatusBarVisible();
+        hudBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void startHudTicker() {
+        if (mHudHandler != null) {
+            mHudHandler.removeCallbacks(mHudUpdateRunnable);
+            mHudHandler.post(mHudUpdateRunnable);
+        }
+    }
+
+    private void stopHudTicker() {
+        if (mHudHandler != null) {
+            mHudHandler.removeCallbacks(mHudUpdateRunnable);
+        }
+    }
+
+    private void updateKonsoleHudContent() {
+        com.termux.app.konsole.KonsoleConfigManager cfg = com.termux.app.konsole.KonsoleConfigManager.getInstance();
+        String mode = cfg.getMode();
+        boolean isKonsole = "konsole".equalsIgnoreCase(mode);
+        boolean isWide = getResources().getConfiguration().screenWidthDp >= 520;
+        if (mHudModeView != null) {
+            String label = isWide ? (isKonsole ? "● KONSOLE" : "● TERMUX") : (isKonsole ? "● KONS" : "● TMUX");
+            mHudModeView.setText(label);
+            mHudModeView.setTextColor(isKonsole ? 0xFF00E5FF : 0xFFFFB74D);
+            mHudModeView.setBackgroundResource(isKonsole ? R.drawable.bg_hud_mode_konsole : R.drawable.bg_hud_mode_termux);
+        }
+        if (mHudTelemetryView != null) {
+            java.util.Map<String, String> vars = com.termux.app.konsole.KonsoleTelemetryManager.getInstance().getLiveVariables();
+            String bat = vars.getOrDefault("battery", "--");
+            if (bat.contains(" ")) bat = bat.substring(0, bat.indexOf(' '));
+
+            String ramRaw = vars.getOrDefault("ram_used", "--");
+            String ramShort = ramRaw.replace(" MB", "M").replace(" ", "");
+            if (ramRaw.endsWith("MB")) {
+                try {
+                    double mb = Double.parseDouble(ramRaw.replace("MB", "").trim());
+                    if (mb >= 1024.0) {
+                        ramShort = String.format(java.util.Locale.US, "%.1fG", mb / 1024.0);
+                    } else {
+                        ramShort = Math.round(mb) + "M";
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+
+            String net = vars.getOrDefault("network_type", "--");
+            if ("WIFI".equalsIgnoreCase(net)) net = "WiFi";
+            String time = vars.getOrDefault("time", "--:--");
+            if (time.length() >= 5) time = time.substring(0, 5);
+
+            if (isWide) {
+                mHudTelemetryView.setText("BAT " + bat + " · RAM " + ramShort + " · " + net + " · " + time);
+            } else {
+                mHudTelemetryView.setText(bat + " · " + ramShort + " · " + net);
+            }
+        }
+    }
+
+    public void showCommandPaletteDialog() {
+        new com.termux.app.konsole.KonsoleCommandPaletteDialog(this, commandLine -> {
+            TerminalSession session = getCurrentSession();
+            if (session == null || commandLine == null) return;
+            String trimmed = commandLine.trim();
+            if (trimmed.isEmpty()) return;
+
+            if (trimmed.endsWith("search")) {
+                String prefill = "\u0015" + trimmed + " ";
+                byte[] bytes = prefill.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                session.write(bytes, 0, bytes.length);
+                return;
+            }
+
+            if (trimmed.equals("kons switch konsole") || trimmed.equals("kons switch termux")) {
+                String nextMode = trimmed.endsWith("konsole") ? "konsole" : "termux";
+                com.termux.app.konsole.KonsoleConfigManager.getInstance().setBehaviorMode(nextMode);
+                com.termux.app.konsole.KonsoleFishBridge.syncStateFiles(this);
+                updateKonsoleHudContent();
+            }
+
+            String toSend = "\u0015" + trimmed + "\n";
+            byte[] cmdBytes = toSend.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            session.write(cmdBytes, 0, cmdBytes.length);
+        }).show();
     }
 
     private void requestKonsolePermissions() {
@@ -922,6 +1099,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
                             getString(com.termux.shared.R.string.msg_storage_permission_granted_on_request));
 
+                    com.termux.app.konsole.KonsoleConfigManager.getInstance().init(TermuxActivity.this);
                     TermuxInstaller.setupStorageSymlinks(TermuxActivity.this);
                 } else {
                     if (isPermissionCallback)
@@ -1123,6 +1301,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         setMargins();
         setTerminalToolbarHeight();
+        syncPreferencesToTerminalUi();
 
         FileReceiverActivity.updateFileReceiverActivityComponentsState(this);
 

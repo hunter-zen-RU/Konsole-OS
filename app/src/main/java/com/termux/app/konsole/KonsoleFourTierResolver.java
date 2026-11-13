@@ -5,6 +5,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Environment;
 
+import com.termux.shared.termux.TermuxConstants;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -41,7 +43,7 @@ public class KonsoleFourTierResolver {
             "cd", "export", "alias", "source", "echo", "exit", "history", "pwd", "set", "unset", "clear",
             "bluetooth", "bt", "wifi", "music", "media", "call", "contact", "contacts", "volume", "vol",
             "calc", "eval", "flash", "flashlight", "vibrate", "beep", "brightness", "dnd", "wallpaper",
-            "lock", "battery", "home", "uninstall", "settings", "kons", "launch", "version", "about", "help", "switch"
+            "lock", "battery", "home", "uninstall", "settings", "kons", "launch", "dashboard", "dash", "macro", "auto-trigger", "macrolab", "version", "about", "help", "switch"
     );
 
     private final List<String> mInstallablePackages = Arrays.asList(
@@ -120,7 +122,9 @@ public class KonsoleFourTierResolver {
         mCompletionRegistry.put("tar", Arrays.asList("-czvf", "-xzvf", "-tjf", "-C", "--extract", "--create"));
         mCompletionRegistry.put("ollama", Arrays.asList("run", "pull", "push", "list", "show", "create", "cp", "rm", "serve", "--help"));
         mCompletionRegistry.put("claude", Arrays.asList("run", "chat", "config", "--help", "-v", "--version"));
-        mCompletionRegistry.put("kons", Arrays.asList("apps", "set", "notify", "toast", "alias", "list", "install", "update", "version", "about", "help", "switch"));
+        mCompletionRegistry.put("kons", Arrays.asList("dashboard", "dash", "macro", "macrolab", "setup-fish", "fish", "apps", "palette", "search", "install", "run", "remove", "list", "sys", "hud", "set", "notify", "toast", "alias", "update", "version", "about", "help", "switch"));
+        mCompletionRegistry.put("macro", Arrays.asList("lab", "list", "status", "trigger", "enable", "disable", "notify", "toast", "flash", "vibrate", "launch", "tap", "swipe", "help"));
+        mCompletionRegistry.put("auto-trigger", Arrays.asList("lab", "list", "status", "trigger", "enable", "disable", "notify", "toast", "flash", "vibrate", "launch", "tap", "swipe", "help"));
         mCompletionRegistry.put("settings", Arrays.asList("wifi", "bluetooth", "apps", "display", "sound", "security", "storage"));
         mCompletionRegistry.put("bluetooth", Arrays.asList("status", "on", "off", "ls", "connect"));
         mCompletionRegistry.put("bt", Arrays.asList("status", "on", "off", "ls", "connect"));
@@ -211,7 +215,7 @@ public class KonsoleFourTierResolver {
     // TIER 2: Path & Directory Scanning
     private String resolveTier2Paths(String command, String pathToken) {
         try {
-            String homeDir = "/data/data/com.huntech.konsoleos/files/home";
+            String homeDir = TermuxConstants.TERMUX_HOME_DIR_PATH;
             String expandedPath = pathToken;
             if (expandedPath.startsWith("~")) {
                 expandedPath = homeDir + expandedPath.substring(1);
@@ -301,7 +305,61 @@ public class KonsoleFourTierResolver {
             }
         }
 
+        // 6. Fuzzy typo hint for mistyped commands (edit distance <= 2)
+        if (lowerToken.length() >= 3 && !KonsolePathIndexer.getInstance().isExecutable(lowerToken)) {
+            String bestMatch = null;
+            int bestDist = 3;
+            for (String b : mBuiltInCommands) {
+                if (b.equals(lowerToken)) return null;
+                int dist = levenshteinDistance(lowerToken, b);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestMatch = b;
+                }
+            }
+            if (bestMatch != null) {
+                return " (did you mean: " + bestMatch + "?)";
+            }
+        }
+
         return null;
+    }
+
+    public String suggestCommand(String rawWord) {
+        if (rawWord == null || rawWord.trim().isEmpty()) return null;
+        String lowerToken = rawWord.trim().toLowerCase();
+        if (lowerToken.length() < 3) return null;
+
+        String bestMatch = null;
+        int bestDist = 3;
+        for (String b : mBuiltInCommands) {
+            if (b.equals(lowerToken)) return null;
+            int dist = levenshteinDistance(lowerToken, b);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestMatch = b;
+            }
+        }
+        return bestMatch;
+    }
+
+    private int levenshteinDistance(String a, String b) {
+        int[] dp = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) dp[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            int prev = dp[0];
+            dp[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int temp = dp[j];
+                if (a.charAt(i - 1) == b.charAt(j - 1)) {
+                    dp[j] = prev;
+                } else {
+                    dp[j] = 1 + Math.min(prev, Math.min(dp[j - 1], dp[j]));
+                }
+                prev = temp;
+            }
+        }
+        return dp[b.length()];
     }
 
     // TIER 4: Subcommand & Flag Completions

@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#0D1117">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="MACRO RULE BUILDER"
+            android:textColor="#00E5FF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:fontFamily="monospace"
+            android:text="MACRO NAME"
+            android:textColor="#8B949E"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/editor_macro_name"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_terminal_input"
+            android:fontFamily="monospace"
+            android:hint="e.g. Wi-Fi Workspace Sync"
+            android:paddingHorizontal="12dp"
+            android:singleLine="true"
+            android:textColor="#E6EDF3"
+            android:textColorHint="#586370"
+            android:textSize="13sp" />
+
+        <!-- TRIGGER SECTION -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:fontFamily="monospace"
+            android:text="TRIGGER (PHASE A)"
+            android:textColor="#8B949E"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/editor_trigger_spinner"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_terminal_input"
+            android:paddingHorizontal="8dp" />
+
+        <EditText
+            android:id="@+id/editor_trigger_value"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_terminal_input"
+            android:fontFamily="monospace"
+            android:hint="Cron (*/15 * * * *), interval min, or filter text"
+            android:paddingHorizontal="12dp"
+            android:singleLine="true"
+            android:textColor="#E6EDF3"
+            android:textColorHint="#586370"
+            android:textSize="12.5sp" />
+
+        <TextView
+            android:id="@+id/editor_cron_preview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace"
+            android:textColor="#00FF88"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+        <HorizontalScrollView
+            android:id="@+id/editor_cron_presets_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/editor_cron_presets_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <!-- CONSTRAINTS SECTION -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:fontFamily="monospace"
+            android:text="CONSTRAINTS (PHASE B)"
+            android:textColor="#8B949E"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <CheckBox
+                android:id="@+id/editor_chk_charging"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:text="Charging"
+                android:textColor="#E6EDF3"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/editor_chk_discharging"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:text="Discharging"
+                android:textColor="#E6EDF3"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <CheckBox
+                android:id="@+id/editor_chk_wifi"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:text="Wi-Fi On"
+                android:textColor="#E6EDF3"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/editor_chk_screen"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:text="Screen On"
+                android:textColor="#E6EDF3"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/editor_min_battery"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_terminal_input"
+                android:fontFamily="monospace"
+                android:hint="Min Bat % (0)"
+                android:inputType="number"
+                android:paddingHorizontal="10dp"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#586370"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/editor_max_battery"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_terminal_input"
+                android:fontFamily="monospace"
+                android:hint="Max Bat % (100)"
+                android:inputType="number"
+                android:paddingHorizontal="10dp"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#586370"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/editor_ssid_filter"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1.3"
+                android:background="@drawable/bg_terminal_input"
+                android:fontFamily="monospace"
+                android:hint="SSID filter"
+                android:paddingHorizontal="10dp"
+                android:singleLine="true"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#586370"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- ACTIONS LIST & ACTION ADDER -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:fontFamily="monospace"
+            android:text="ACTIONS PIPELINE (PHASE C)"
+            android:textColor="#8B949E"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/editor_actions_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_dashboard_card"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <Spinner
+                android:id="@+id/editor_action_type_spinner"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_terminal_input"
+                android:paddingHorizontal="8dp" />
+
+            <EditText
+                android:id="@+id/editor_action_param1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_terminal_input"
+                android:fontFamily="monospace"
+                android:hint="Command, title, mode (on/off), app name, or x"
+                android:minHeight="48dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="8dp"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#586370"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/editor_action_param2"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_terminal_input"
+                android:fontFamily="monospace"
+                android:hint="Optional body text, y coord, or swipe end (x2,y2)"
+                android:paddingHorizontal="10dp"
+                android:singleLine="true"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#586370"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="monospace"
+                android:text="INSERT DYNAMIC VARIABLE:"
+                android:textColor="#8B949E"
+                android:textSize="10sp" />
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/editor_variable_chips_row"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/editor_add_action_btn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_hud_chip_cyan"
+                android:contentDescription="Append action step to macro"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:text="+ ADD ACTION STEP"
+                android:textColor="#00E5FF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- SAVE / CANCEL -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/editor_cancel_btn"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_dashboard_chip"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:text="CANCEL"
+                android:textColor="#8B949E"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/editor_save_btn"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1.3"
+                android:background="@drawable/bg_hud_chip_green"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:text="SAVE MACRO"
+                android:textColor="#00FF88"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
