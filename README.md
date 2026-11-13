@@ -141,7 +141,8 @@ We are currently looking for maintainers for the Konsole Android application.
 - [Termux](https://github.com/termux/termux-app)
 - [Termux packages](https://github.com/termux/termux-packages)
 - [Konsole packages](https://github.com/hunter-zen-RU/Konsole-packages)
-
+- [storages 1 hunzen](https://hunterzen-ru.github.io/Konsole-package/packges.json)
+- [Storage 2 hun-zen](https://hunterzenru.github.io/Konsole-package/packges.json)
 ---
 
 Built for Android users who want a Linux-style terminal environment in a mobile-first, app-driven workflow.
