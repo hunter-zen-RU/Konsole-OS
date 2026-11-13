@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <!DOCTYPE resources [
-    <!ENTITY TERMUX_PACKAGE_NAME "com.huntech.konsoleos">
+    <!ENTITY TERMUX_PACKAGE_NAME "com.termux">
     <!ENTITY TERMUX_APP_NAME "Konsole OS">
     <!ENTITY TERMUX_API_APP_NAME "Termux:API">
     <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
@@ -234,5 +234,15 @@
 
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
+
+    <!-- Konsole System Dashboard -->
+    <string name="action_open_dashboard">System Dashboard</string>
+    <string name="title_konsole_dashboard">System Dashboard</string>
+
+    <!-- Konsole Automation & Macro Lab -->
+    <string name="title_konsole_macro_lab">Macro Lab</string>
+    <string name="konsole_notification_listener_label">Konsole OS Notification Trigger</string>
+    <string name="konsole_accessibility_label">Konsole OS UI &amp; Gesture Automation</string>
+    <string name="konsole_accessibility_description">Optional sensor enabling Konsole OS macros to detect foreground app launches and perform user-configured tap/swipe actions.</string>
 
 </resources>

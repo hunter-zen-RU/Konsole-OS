@@ -433,6 +433,16 @@ public final class TerminalEmulator {
     /** If automatic scrolling of terminal is disabled */
     private boolean mAutoScrollDisabled;
 
+    /**
+     * XTerm key modifier resources set via {@code CSI > Pp ; Pv m}:
+     * 1=modifyKeyboard (default 0), 2=modifyCursorKeys (default 2),
+     * 3=modifyFunctionKeys (default 2), 4=modifyOtherKeys (default 0).
+     */
+    private int mModifyKeyboard = 0;
+    private int mModifyCursorKeys = 2;
+    private int mModifyFunctionKeys = 2;
+    private int mModifyOtherKeys = 0;
+
     private byte mUtf8ToFollow, mUtf8Index;
     private final byte[] mUtf8InputBuffer = new byte[4];
     private int mLastEmittedCodePoint = -1;
@@ -536,6 +546,10 @@ public final class TerminalEmulator {
 
     public boolean isAlternateBufferActive() {
         return mScreen == mAltBuffer;
+    }
+
+    public int getModifyOtherKeys() {
+        return mModifyOtherKeys;
     }
 
     private int getTerminalTranscriptRows(Integer transcriptRows) {
@@ -1749,6 +1763,28 @@ public final class TerminalEmulator {
                 for (int i = 0; i <= mArgIndex; i++)
                     doDecSetOrReset(b == 'h', mArgs[i]);
                 break;
+            case 'm': // XTQMODKEYS - Query key modifier options (xterm).
+                switch (getArg0(0)) {
+                    case 0:
+                        mSession.write("\033[>0m");
+                        break;
+                    case 1:
+                        mSession.write("\033[>1;" + mModifyKeyboard + "m");
+                        break;
+                    case 2:
+                        mSession.write("\033[>2;" + mModifyCursorKeys + "m");
+                        break;
+                    case 3:
+                        mSession.write("\033[>3;" + mModifyFunctionKeys + "m");
+                        break;
+                    case 4:
+                        mSession.write("\033[>4;" + mModifyOtherKeys + "m");
+                        break;
+                    default:
+                        finishSequence();
+                        return;
+                }
+                break;
             case 'n': // Device Status Report (DSR, DEC-specific).
                 switch (getArg0(-1)) {
                     case 6:
@@ -1957,7 +1993,33 @@ public final class TerminalEmulator {
                 // (1) enables this feature for keys except for those with well-known behavior, e.g., Tab, Backarrow and
                 // some special control character cases, e.g., Control-Space to make a NUL.
                 // (2) enables this feature for keys including the exceptions listed.
-                Logger.logError(mClient, LOG_TAG, "(ignored) CSI > MODIFY RESOURCE: " + getArg0(-1) + " to " + getArg1(-1));
+                int resource = getArg0(-1);
+                int value = getArg1(-1);
+                switch (resource) {
+                    case -1: // CSI > m resets all modify* resources to defaults
+                        mModifyKeyboard = 0;
+                        mModifyCursorKeys = 2;
+                        mModifyFunctionKeys = 2;
+                        mModifyOtherKeys = 0;
+                        break;
+                    case 1: // modifyKeyboard
+                        mModifyKeyboard = (value == -1) ? 0 : value;
+                        break;
+                    case 2: // modifyCursorKeys
+                        mModifyCursorKeys = (value == -1) ? 2 : value;
+                        break;
+                    case 3: // modifyFunctionKeys
+                        mModifyFunctionKeys = (value == -1) ? 2 : value;
+                        break;
+                    case 4: // modifyOtherKeys (used by Fish 4.x: CSI > 4 ; 1 m / CSI > 4 m)
+                        mModifyOtherKeys = (value == -1) ? 0 : value;
+                        break;
+                    default:
+                        if (LOG_ESCAPE_SEQUENCES) {
+                            Logger.logWarn(mClient, LOG_TAG, "(ignored) CSI > MODIFY RESOURCE: " + resource + " to " + value);
+                        }
+                        break;
+                }
                 break;
             default:
                 parseArg(b);
@@ -3517,6 +3579,11 @@ public final class TerminalEmulator {
         clearTerminalControlArgs();
         clearOscTypeVariables();
         mITermImage = null;
+
+        mModifyKeyboard = 0;
+        mModifyCursorKeys = 2;
+        mModifyFunctionKeys = 2;
+        mModifyOtherKeys = 0;
     }
 
     public String getSelectedText(int x1, int y1, int x2, int y2) {

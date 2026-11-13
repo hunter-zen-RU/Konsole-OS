@@ -56,6 +56,13 @@ public class KonsoleGhostTextRenderer {
         return mCommandHistory;
     }
 
+    public String getHistoryEntry(int index) {
+        if (index < 0 || index >= mCommandHistory.size()) {
+            return null;
+        }
+        return mCommandHistory.get(index);
+    }
+
     /**
      * Determines command availability state for real-time syntax glowing:
      * - STATUS_AVAILABLE (1) -> Glow Blue

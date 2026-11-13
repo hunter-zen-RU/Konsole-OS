@@ -4,6 +4,7 @@
     android:id="@+id/activity_termux_root_view"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#0B0F14"
     android:orientation="vertical"
     android:fitsSystemWindows="true">
 
@@ -12,14 +13,123 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginHorizontal="3dp"
+        android:layout_marginHorizontal="0dp"
         android:layout_marginVertical="0dp"
+        android:background="#000000"
         android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/konsole_hud_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="44dp"
+            android:layout_alignParentTop="true"
+            android:background="@drawable/bg_hud_bar"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="5dp">
+
+            <TextView
+                android:id="@+id/konsole_hud_mode"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:background="@drawable/bg_hud_mode_konsole"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Toggle Konsole and Termux shell mode"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.04"
+                android:paddingHorizontal="10dp"
+                android:singleLine="true"
+                android:text="● KONS"
+                android:textColor="#00E5FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/konsole_hud_telemetry"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/action_open_dashboard"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:maxLines="1"
+                android:paddingHorizontal="6dp"
+                android:singleLine="true"
+                android:text="READY"
+                android:textColor="#9FB0C3"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/konsole_hud_dashboard"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="5dp"
+                android:minWidth="48dp"
+                android:background="@drawable/bg_hud_chip_cyan"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/action_open_dashboard"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.04"
+                android:paddingHorizontal="9dp"
+                android:singleLine="true"
+                android:text="DASH"
+                android:textColor="#38BDF8"
+                android:textSize="10.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/konsole_hud_apps"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="5dp"
+                android:minWidth="48dp"
+                android:background="@drawable/bg_hud_chip_green"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Open Konsole Apps Drawer"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.04"
+                android:paddingHorizontal="9dp"
+                android:singleLine="true"
+                android:text="APPS"
+                android:textColor="#00FF88"
+                android:textSize="10.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/konsole_hud_palette"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:minWidth="48dp"
+                android:background="@drawable/bg_hud_chip_amber"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Open Konsole Command Palette"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.04"
+                android:paddingHorizontal="9dp"
+                android:singleLine="true"
+                android:text="CMD"
+                android:textColor="#FFD166"
+                android:textSize="10.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <androidx.drawerlayout.widget.DrawerLayout
             android:id="@+id/drawer_layout"
             android:layout_width="match_parent"
-            android:layout_alignParentTop="true"
+            android:layout_below="@+id/konsole_hud_bar"
             android:layout_above="@+id/terminal_toolbar_view_pager"
             android:layout_height="match_parent">
 
@@ -35,7 +145,7 @@
 
             <LinearLayout
                 android:id="@+id/left_drawer"
-                android:layout_width="240dp"
+                android:layout_width="268dp"
                 android:layout_height="match_parent"
                 android:layout_gravity="start"
                 android:choiceMode="singleChoice"
@@ -43,21 +153,65 @@
                 android:dividerHeight="0dp"
                 android:descendantFocusability="blocksDescendants"
                 android:orientation="vertical"
-                android:background="?attr/termuxActivityDrawerBackground">
+                android:background="#0B0F14">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="10dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="KONSOLE OS"
+                            android:textColor="#00E5FF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:letterSpacing="0.06"
+                            android:text="SESSIONS"
+                            android:textColor="#8B949E"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <ImageButton
+                        android:id="@+id/dashboard_button"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="6dp"
+                        android:src="@drawable/ic_dashboard"
+                        android:background="@drawable/bg_drawer_action_pill"
+                        android:contentDescription="@string/action_open_dashboard"
+                        app:tint="#38BDF8" />
+
                     <ImageButton
                         android:id="@+id/settings_button"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
                         android:src="@drawable/ic_settings"
-                        android:background="@null"
+                        android:background="@drawable/bg_drawer_action_pill"
                         android:contentDescription="@string/action_open_settings"
-                        app:tint="?attr/termuxActivityDrawerImageTint" />
+                        app:tint="#E6EDF3" />
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#1B2635" />
 
                 <ListView
                     android:id="@+id/terminal_sessions_list"
@@ -65,13 +219,24 @@
                     android:layout_height="0dp"
                     android:layout_gravity="top"
                     android:layout_weight="1"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="6dp"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="4dp"
                     android:choiceMode="singleChoice"
                     android:longClickable="true" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#1B2635" />
 
                 <LinearLayout
                     style="?android:attr/buttonBarStyle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp"
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
@@ -80,6 +245,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:textColor="#E6EDF3"
+                        android:textSize="11.5sp"
                         android:text="@string/action_toggle_soft_keyboard" />
 
                     <com.google.android.material.button.MaterialButton
@@ -88,6 +256,9 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:fontFamily="monospace"
+                        android:textColor="#00E5FF"
+                        android:textSize="11.5sp"
                         android:text="@string/action_new_session" />
                 </LinearLayout>
             </LinearLayout>
@@ -99,7 +270,7 @@
             android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="37.5dp"
-            android:background="@color/black"
+            android:background="@drawable/bg_toolbar_surface"
             android:layout_alignParentBottom="true" />
 
     </RelativeLayout>

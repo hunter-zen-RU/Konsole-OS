@@ -3,10 +3,12 @@ name: "Validate Gradle Wrapper"
 on:
   push:
     branches:
+      - main
       - master
       - android-10
   pull_request:
     branches:
+      - main
       - master
       - android-10
   workflow_dispatch:
@@ -16,5 +18,5 @@ jobs:
     name: "Validation"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: gradle/actions/wrapper-validation@v6
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/wrapper-validation@v4

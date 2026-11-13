@@ -1,42 +1,124 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121820"
-    android:orientation="vertical"
+    android:background="#B804070B"
     android:padding="16dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingBottom="12dp"
-        android:text="[ KONSOLE OS APPS DRAWER ]"
-        android:textColor="#00E5FF"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:gravity="center" />
-
-    <EditText
-        android:id="@+id/konsole_app_search"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#1E2836"
-        android:hint="Type app name to filter..."
-        android:textColorHint="#708090"
-        android:textColor="#00FF66"
-        android:padding="12dp"
-        android:layout_marginBottom="16dp"
-        android:textCursorDrawable="@null"
-        android:singleLine="true" />
-
-    <GridView
-        android:id="@+id/konsole_app_grid"
+    <LinearLayout
+        android:id="@+id/konsole_apps_card"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:numColumns="4"
-        android:verticalSpacing="16dp"
-        android:horizontalSpacing="16dp"
-        android:stretchMode="columnWidth"
-        android:gravity="center" />
+        android:layout_gravity="center"
+        android:background="@drawable/bg_terminal_modal"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-</LinearLayout>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp"
+                android:text="●"
+                android:textColor="#00FF88"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="APPS LAUNCHER"
+                    android:textColor="#E6EDF3"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/konsole_app_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="Installed Android Applications"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/konsole_app_close"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:minWidth="56dp"
+                android:background="@drawable/bg_hud_chip_amber"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:fontFamily="monospace"
+                android:text="ESC"
+                android:textColor="#FF7B72"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:contentDescription="Close Apps Drawer" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="14dp"
+            android:background="@drawable/bg_terminal_input"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp"
+                android:text="❯"
+                android:textColor="#00FF88"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/konsole_app_search"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:fontFamily="monospace"
+                android:hint="Filter installed apps..."
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:singleLine="true"
+                android:textColor="#00FF88"
+                android:textColorHint="#6E7681"
+                android:textSize="13.5sp" />
+        </LinearLayout>
+
+        <GridView
+            android:id="@+id/konsole_app_grid"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:numColumns="4"
+            android:verticalSpacing="10dp"
+            android:horizontalSpacing="10dp"
+            android:stretchMode="columnWidth"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+</FrameLayout>

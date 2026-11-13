@@ -3,6 +3,8 @@ package com.termux.app.konsole;
 import android.content.Context;
 import android.util.Log;
 
+import com.termux.shared.termux.TermuxConstants;
+
 import java.io.File;
 import java.util.Collections;
 import java.util.Set;
@@ -45,7 +47,7 @@ public class KonsolePathIndexer {
                 // 1. Scan $PATH environment variable
                 String pathEnv = System.getenv("PATH");
                 if (pathEnv == null || pathEnv.isEmpty()) {
-                    pathEnv = "/data/data/com.huntech.konsoleos/files/usr/bin:/system/bin:/system/xbin";
+                    pathEnv = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":/system/bin:/system/xbin";
                 }
 
                 String[] dirs = pathEnv.split(":");
@@ -57,7 +59,7 @@ public class KonsolePathIndexer {
                 scanDirectory(new File(KonsoleConfigManager.BIN_PATH), newSet);
 
                 // 3. Scan Termux prefix bin if present
-                scanDirectory(new File("/data/data/com.huntech.konsoleos/files/usr/bin"), newSet);
+                scanDirectory(new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH), newSet);
 
                 mPathExecutables.clear();
                 mPathExecutables.addAll(newSet);

@@ -34,8 +34,10 @@ import android.view.KeyEvent;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.FileProvider;
 
 import com.termux.app.TermuxActivity;
+import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
 import org.json.JSONArray;
@@ -51,6 +53,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,6 +71,21 @@ public class KonsoleCommandDispatcher {
     @SuppressLint("StaticFieldLeak")
     private static KonsoleCommandDispatcher sInstance;
 
+    public interface CommandSink {
+        void write(String text);
+        void finish(int exitCode);
+    }
+
+    private static final class BridgeState {
+        final CommandSink sink;
+        boolean deferred = false;
+        BridgeState(CommandSink sink) {
+            this.sink = sink;
+        }
+    }
+
+    private final ThreadLocal<BridgeState> mBridgeState = new ThreadLocal<>();
+
     private KonsoleCommandDispatcher() {
     }
 
@@ -76,6 +94,74 @@ public class KonsoleCommandDispatcher {
             sInstance = new KonsoleCommandDispatcher();
         }
         return sInstance;
+    }
+
+    private BridgeState markAsyncDeferred() {
+        BridgeState state = mBridgeState.get();
+        if (state != null) {
+            state.deferred = true;
+        }
+        return state;
+    }
+
+    private void completeAsync(BridgeState state, int exitCode) {
+        if (state != null && state.sink != null) {
+            state.sink.finish(exitCode);
+        }
+    }
+
+    /**
+     * Executes a command dispatched from Fish shell (via KonsoleFishBridge / konsole-exec).
+     */
+    public void executeBridgeCommand(Context context, String rawInput, CommandSink sink) {
+        BridgeState state = new BridgeState(sink);
+        mBridgeState.set(state);
+        try {
+            boolean handled = handleCommand(context, null, rawInput);
+            if (!state.deferred) {
+                sink.finish(handled ? 0 : 127);
+            }
+        } catch (Exception e) {
+            sink.write("\033[1;31m[Konsole OS Error]\033[0m " + e.getMessage() + "\n");
+            if (!state.deferred) {
+                sink.finish(1);
+            }
+        } finally {
+            mBridgeState.remove();
+        }
+    }
+
+    /**
+     * Called by Fish's fish_command_not_found event handler when in konsole mode.
+     * Attempts to launch matching installed Android apps; otherwise provides typo/package hints.
+     */
+    public void tryLaunchOrSuggest(Context context, String rawInput, CommandSink sink) {
+        BridgeState state = new BridgeState(sink);
+        mBridgeState.set(state);
+        try {
+            if (rawInput == null || rawInput.trim().isEmpty()) {
+                sink.finish(127);
+                return;
+            }
+            String trimmed = rawInput.trim();
+            if ("konsole".equalsIgnoreCase(KonsoleConfigManager.getInstance().getMode())) {
+                if (tryLaunchAppByLabel(context, null, trimmed)) {
+                    sink.finish(0);
+                    return;
+                }
+            }
+            String firstWord = trimmed.split("\\s+")[0];
+            String suggestion = KonsoleFourTierResolver.getInstance().suggestCommand(firstWord);
+            if (suggestion != null) {
+                sink.write("\033[1;33m[Konsole OS]\033[0m Unknown command '\033[1;31m" + firstWord
+                        + "\033[0m'. Did you mean '\033[1;36m" + suggestion + "\033[0m'?\n");
+            }
+            sink.finish(127);
+        } catch (Exception e) {
+            sink.finish(127);
+        } finally {
+            mBridgeState.remove();
+        }
     }
 
     /**
@@ -90,14 +176,17 @@ public class KonsoleCommandDispatcher {
         KonsoleConfigManager configMgr = KonsoleConfigManager.getInstance();
         String mode = configMgr.getMode();
 
-        // 1. Mode Check: If in termux mode, only intercept 'kons switch konsole'
+        // 1. Mode Check: If in termux mode, only allow 'kons' commands
         if ("termux".equalsIgnoreCase(mode)) {
             if (line.equals("kons switch konsole")) {
                 configMgr.setBehaviorMode("konsole");
+                KonsoleFishBridge.syncStateFiles(context);
                 writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Switched to \033[1;36mKonsole OS\033[0m launcher mode.\r\n");
                 return true;
             }
-            return false;
+            if (!line.toLowerCase().startsWith("kons ") && !line.equalsIgnoreCase("kons")) {
+                return false;
+            }
         }
 
         // Sudo Lockdown Interceptor
@@ -206,6 +295,15 @@ public class KonsoleCommandDispatcher {
             case "settings":
                 return handleSettings(context, session, parts);
 
+            case "dashboard":
+            case "dash":
+                return openDashboardActivity(context, session);
+
+            case "macro":
+            case "auto-trigger":
+            case "macrolab":
+                return dispatchMacroCommand(context, session, line, parts);
+
             default:
                 // Check if line matches an installed Android launchable application label!
                 if (tryLaunchAppByLabel(context, session, line)) {
@@ -256,20 +354,25 @@ public class KonsoleCommandDispatcher {
 
     private boolean handleKonsSuite(Context context, TerminalSession session, String line, String[] parts) {
         if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: kons <apps|set|notify|toast|alias|list|install|update|version|about|help|switch>\r\n");
+            writeToTerminal(session, "\r\nUsage: kons <dashboard|macro|apps|palette|search|install|run|remove|list|sys|hud|set|notify|toast|alias|setup-fish|update|version|about|help|switch>\r\n");
             return true;
         }
 
         String sub = parts[1].toLowerCase();
         switch (sub) {
             case "apps":
-                if (context instanceof TermuxActivity) {
-                    ((TermuxActivity) context).runOnUiThread(() -> {
-                        KonsoleAppsDialog dialog = new KonsoleAppsDialog(context, (appName, pkg) -> {
-                            writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Launched \033[1;36m" + appName + "\033[0m (" + pkg + ")\r\n");
+                Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                if (uiCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) uiCtx).runOnUiThread(() -> {
+                        KonsoleAppsDialog dialog = new KonsoleAppsDialog(uiCtx, (appName, pkg) -> {
+                            if (session != null) {
+                                writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Launched \033[1;36m" + appName + "\033[0m (" + pkg + ")\r\n");
+                            }
                         });
                         dialog.show();
                     });
+                } else {
+                    writeToTerminal(session, "\r\n\033[1;33m[Konsole OS]\033[0m Open Termux window to display Apps Drawer.\r\n");
                 }
                 return true;
 
@@ -279,6 +382,7 @@ public class KonsoleCommandDispatcher {
                 } else {
                     String[] kv = parts[2].split("=", 2);
                     KonsoleConfigManager.getInstance().setUserVariable(kv[0].trim(), kv[1].trim());
+                    KonsoleFishBridge.syncStateFiles(context);
                     writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Variable \033[1;33m$" + kv[0].trim() + "\033[0m set to: " + kv[1].trim() + "\r\n");
                 }
                 return true;
@@ -381,13 +485,85 @@ public class KonsoleCommandDispatcher {
                 }
                 return true;
 
+            case "run":
+                if (parts.length < 3) {
+                    writeToTerminal(session, "\r\nUsage: kons run <package-or-command> [args...]\r\n");
+                } else {
+                    runInstalledPackage(context, session, parts);
+                }
+                return true;
+
+            case "search":
+                String searchQuery = parts.length >= 3 ? line.substring(line.indexOf(parts[1]) + parts[1].length()).trim() : "";
+                searchKonsPackages(session, searchQuery);
+                return true;
+
+            case "remove":
+            case "rm":
+                if (parts.length < 3) {
+                    writeToTerminal(session, "\r\nUsage: kons remove <package-name>\r\n");
+                } else {
+                    removeKonsPackage(context, session, parts[2]);
+                }
+                return true;
+
+            case "sys":
+            case "status":
+                printSystemTelemetryCard(session);
+                return true;
+
+            case "hud":
+                if (parts.length >= 3 && (parts[2].equalsIgnoreCase("on") || parts[2].equalsIgnoreCase("off"))) {
+                    boolean showHud = parts[2].equalsIgnoreCase("on");
+                    KonsoleConfigManager.getInstance().setUiProperty("statusBarVisible", String.valueOf(showHud));
+                    Context hudCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                    if (hudCtx instanceof TermuxActivity) {
+                        ((TermuxActivity) hudCtx).runOnUiThread(((TermuxActivity) hudCtx)::refreshKonsoleHudVisibility);
+                    }
+                    writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Telemetry HUD bar turned " + (showHud ? "\033[1;32mON\033[0m" : "\033[1;33mOFF\033[0m") + ".\r\n");
+                } else {
+                    writeToTerminal(session, "\r\nUsage: kons hud <on|off>\r\n");
+                }
+                return true;
+
+            case "palette":
+                Context palCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                if (palCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) palCtx).runOnUiThread(((TermuxActivity) palCtx)::showCommandPaletteDialog);
+                }
+                return true;
+
+            case "dash":
+            case "dashboard":
+                return openDashboardActivity(context, session);
+
+            case "macro":
+            case "macros":
+            case "macrolab": {
+                if (parts.length < 3 || "lab".equalsIgnoreCase(parts[2])) {
+                    return openMacroLabActivity(context, session);
+                }
+                StringBuilder args = new StringBuilder();
+                for (int i = 2; i < parts.length; i++) {
+                    if (args.length() > 0) args.append(' ');
+                    args.append(parts[i]);
+                }
+                return runMacroCliToSession(context, session, args.toString());
+            }
+
+            case "setup-fish":
+            case "fish":
+                installAndConfigureFishShell(context, session);
+                return true;
+
             case "version":
             case "about":
                 writeToTerminal(session, "\r\n\033[1;36m====================================================\033[0m\r\n" +
-                        "\033[1;32m  Konsole OS - Terminal-based Android OS Replacement\033[0m\r\n" +
+                        "\033[1;32m  Konsole OS - Fish-Powered Terminal OS Environment\033[0m\r\n" +
                         "\033[1;33m  Version:\033[0m v1.0.0-35mos (Build 118)\r\n" +
-                        "\033[1;33m  Package:\033[0m com.huntech.konsoleos\r\n" +
-                        "\033[1;33m  Author:\033[0m hunter-zen-RU\r\n" +
+                        "\033[1;33m  Package:\033[0m " + TermuxConstants.TERMUX_PACKAGE_NAME + "\r\n" +
+                        "\033[1;33m  Shell  :\033[0m Fish + Termux Prefix (" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + ")\r\n" +
+                        "\033[1;33m  Author :\033[0m hunter-zen-RU\r\n" +
                         "\033[1;36m====================================================\033[0m\r\n");
                 return true;
 
@@ -400,6 +576,11 @@ public class KonsoleCommandDispatcher {
                     String target = parts[2].toLowerCase();
                     if (target.equals("termux") || target.equals("konsole")) {
                         KonsoleConfigManager.getInstance().setBehaviorMode(target);
+                        KonsoleFishBridge.syncStateFiles(context);
+                        Context swCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                        if (swCtx instanceof TermuxActivity) {
+                            ((TermuxActivity) swCtx).runOnUiThread(() -> ((TermuxActivity) swCtx).refreshKonsoleHudVisibility());
+                        }
                         writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Switched mode to: \033[1;36m" + target + "\033[0m\r\n");
                     } else {
                         writeToTerminal(session, "\r\nUsage: kons switch <termux|konsole>\r\n");
@@ -416,23 +597,29 @@ public class KonsoleCommandDispatcher {
     }
 
     private void performOtaCheck(Context context, TerminalSession session) {
+        final BridgeState bridgeState = markAsyncDeferred();
         writeToTerminal(session, "\r\n\033[1;36m[OTA Update]\033[0m Checking latest Konsole OS releases from GitHub...\r\n");
         new Thread(() -> {
+            HttpURLConnection conn = null;
+            int code = 0;
             try {
                 URL url = new URL("https://api.github.com/repos/hunter-zen-RU/Konsole-OS/releases/latest");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestProperty("User-Agent", "KonsoleOS-Android");
                 conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
                 if (conn.getResponseCode() == 200) {
-                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    StringBuilder jsonSb = new StringBuilder();
-                    String l;
-                    while ((l = br.readLine()) != null) jsonSb.append(l);
-                    br.close();
+                    String body;
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                        StringBuilder jsonSb = new StringBuilder();
+                        String l;
+                        while ((l = br.readLine()) != null) jsonSb.append(l);
+                        body = jsonSb.toString();
+                    }
 
-                    JSONObject json = new JSONObject(jsonSb.toString());
+                    JSONObject json = new JSONObject(body);
                     String tag = json.optString("tag_name", "v1.0.0");
-                    writeToTerminal(session, "\r\n\033[1;32m[OTA Update]\033[0m Latest Release Tag: \033[1;33m" + tag + "\033[0m\r\n");
+                    writeToSinkOrSession(bridgeState, session, "\r\n\033[1;32m[OTA Update]\033[0m Latest Release Tag: \033[1;33m" + tag + "\033[0m\r\n");
 
                     JSONArray assets = json.optJSONArray("assets");
                     String downloadUrl = null;
@@ -441,199 +628,876 @@ public class KonsoleCommandDispatcher {
                         for (int i = 0; i < assets.length(); i++) {
                             JSONObject asset = assets.getJSONObject(i);
                             String name = asset.optString("name", "");
-                            if (name.contains(targetAbi) || name.contains("universal")) {
+                            if (name.contains(targetAbi) || name.contains("universal") || name.endsWith(".apk")) {
                                 downloadUrl = asset.optString("browser_download_url");
                                 break;
                             }
                         }
                     }
 
-                    if (downloadUrl != null) {
-                        writeToTerminal(session, "\033[1;32m[OTA Update]\033[0m Downloading update APK for " + targetAbi + "...\r\n");
+                    if (downloadUrl != null && !downloadUrl.isEmpty()) {
+                        writeToSinkOrSession(bridgeState, session, "\033[1;32m[OTA Update]\033[0m Downloading update APK for " + targetAbi + "...\r\n");
                         File updateApk = new File(context.getCacheDir(), "konsole_update.apk");
                         URL apkUrl = new URL(downloadUrl);
-                        InputStream is = apkUrl.openStream();
-                        FileOutputStream fos = new FileOutputStream(updateApk);
-                        byte[] buf = new byte[8192];
-                        int read;
-                        while ((read = is.read(buf)) != -1) fos.write(buf, 0, read);
-                        fos.close();
-                        is.close();
+                        try (InputStream is = apkUrl.openStream();
+                             FileOutputStream fos = new FileOutputStream(updateApk)) {
+                            byte[] buf = new byte[8192];
+                            int read;
+                            while ((read = is.read(buf)) != -1) fos.write(buf, 0, read);
+                        }
 
-                        writeToTerminal(session, "\033[1;32m[OTA Update]\033[0m Launching Package Installer...\r\n");
-                        Intent installIntent = new Intent(Intent.ACTION_VIEW);
-                        Uri apkUri = Uri.fromFile(updateApk);
-                        installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-                        installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(installIntent);
+                        writeToSinkOrSession(bridgeState, session, "\033[1;32m[OTA Update]\033[0m Launching Package Installer...\r\n");
+                        launchApkInstaller(context, updateApk);
                     } else {
-                        writeToTerminal(session, "\033[1;33m[OTA Update]\033[0m You are currently running the latest build!\r\n");
+                        writeToSinkOrSession(bridgeState, session, "\033[1;33m[OTA Update]\033[0m You are currently running the latest build!\r\n");
                     }
                 } else {
-                    writeToTerminal(session, "\033[1;31m[OTA Update]\033[0m Release endpoint returned code: " + conn.getResponseCode() + "\r\n");
+                    code = 1;
+                    writeToSinkOrSession(bridgeState, session, "\033[1;31m[OTA Update]\033[0m Release endpoint returned code: " + conn.getResponseCode() + "\r\n");
                 }
             } catch (Exception e) {
-                writeToTerminal(session, "\033[1;31m[OTA Update]\033[0m Failed checking update: " + e.getMessage() + "\r\n");
+                code = 1;
+                writeToSinkOrSession(bridgeState, session, "\033[1;31m[OTA Update]\033[0m Failed checking update: " + e.getMessage() + "\r\n");
+            } finally {
+                if (conn != null) conn.disconnect();
+                completeAsync(bridgeState, code);
             }
         }).start();
     }
 
-    private void installKonsPackage(Context context, TerminalSession session, String pkgName) {
-        writeToTerminal(session, "\r\n\033[1;36m[Kons Package Manager]\033[0m Fetching index for '" + pkgName + "'...\r\n");
-        new Thread(() -> {
-            try {
-                String[] endpoints = new String[]{
-                        "https://raw.githubusercontent.com/hunter-zen-RU/Konsole-packages/main/packages.json",
-                        "https://hunterzen-ru.github.io/TUI/packages/packages.json"
-                };
+    private void launchApkInstaller(Context context, File apkFile) {
+        Intent installIntent = new Intent(Intent.ACTION_VIEW);
+        Uri apkUri = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                ? FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", apkFile)
+                : Uri.fromFile(apkFile);
+        installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+        installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        context.startActivity(installIntent);
+    }
 
-                JSONObject targetPkgObj = null;
-                for (String endpoint : endpoints) {
-                    try {
-                        URL url = new URL(endpoint);
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setConnectTimeout(4000);
-                        conn.setReadTimeout(4000);
-                        conn.setRequestProperty("User-Agent", "KonsoleOS-PkgManager");
-                        if (conn.getResponseCode() == 200) {
-                            BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                            StringBuilder jsonSb = new StringBuilder();
-                            String l;
-                            while ((l = br.readLine()) != null) jsonSb.append(l);
-                            br.close();
+    public static final String[] PACKAGE_ENDPOINTS = new String[]{
+            "https://hunterzen-ru.github.io/Konsole-package/packges.json",
+            "https://hunter-zen-ru.github.io/Konsole-package/packges.json",
+            "https://raw.githubusercontent.com/hunter-zen-RU/Konsole-packages/main/packages.json",
+            "https://hunterzen-ru.github.io/TUI/packages/packages.json"
+    };
 
-                            JSONObject root = new JSONObject(jsonSb.toString());
-                            JSONArray packagesArray = root.optJSONArray("packages");
-                            if (packagesArray != null) {
-                                for (int i = 0; i < packagesArray.length(); i++) {
-                                    JSONObject pObj = packagesArray.getJSONObject(i);
-                                    String name = pObj.optString("name", "");
-                                    if (name.equalsIgnoreCase(pkgName)) {
-                                        targetPkgObj = pObj;
-                                        break;
-                                    }
-                                }
-                            } else if (root.has(pkgName)) {
-                                targetPkgObj = root.getJSONObject(pkgName);
-                            }
-                        }
-                    } catch (Exception ignored) {}
-                    if (targetPkgObj != null) break;
+    private String httpGetString(String endpoint) throws java.io.IOException {
+        HttpURLConnection conn = null;
+        try {
+            conn = openConnectionWithRedirects(endpoint);
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String l;
+                    while ((l = br.readLine()) != null) sb.append(l);
+                    return sb.toString();
                 }
+            }
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+        return null;
+    }
 
-                if (targetPkgObj != null) {
-                    String name = targetPkgObj.optString("name", pkgName);
-                    String version = targetPkgObj.optString("version", "1.0");
-                    String type = targetPkgObj.optString("type", "script").toLowerCase();
-                    String description = targetPkgObj.optString("description", "Custom Konsole package");
-                    String pkgUrl = targetPkgObj.optString("url", "");
-                    String targetName = targetPkgObj.optString("targetName", targetPkgObj.optString("target", name + "." + type));
-
-                    writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Found '\033[1;36m" + name + "\033[0m' v" + version + " [" + type.toUpperCase() + "]\r\n" +
-                            " Description: " + description + "\r\n");
-
-                    if (!pkgUrl.isEmpty()) {
-                        writeToTerminal(session, "\033[1;36m[Kons Package Manager]\033[0m Downloading payload from " + pkgUrl + "...\r\n");
-
-                        File downloadsDir = new File(KonsoleConfigManager.DOWNLOADS_PATH);
-                        if (!downloadsDir.exists()) downloadsDir.mkdirs();
-
-                        File localFile = new File(downloadsDir, targetName);
-                        URL dlUrl = new URL(pkgUrl);
-                        HttpURLConnection dlConn = (HttpURLConnection) dlUrl.openConnection();
-                        dlConn.setConnectTimeout(6000);
-                        dlConn.setRequestProperty("User-Agent", "KonsoleOS-PkgManager");
-
-                        try (InputStream is = dlConn.getInputStream();
-                             FileOutputStream fos = new FileOutputStream(localFile)) {
-                            byte[] buf = new byte[8192];
-                            int read;
-                            while ((read = is.read(buf)) != -1) {
-                                fos.write(buf, 0, read);
-                            }
-                        }
-
-                        // Save local metadata manifest copy to $konsole/packages/installed/<name>.json
-                        File installedDir = new File(KonsoleConfigManager.INSTALLED_PACKAGES_PATH);
-                        if (!installedDir.exists()) installedDir.mkdirs();
-                        File manifestFile = new File(installedDir, name.toLowerCase() + ".json");
-
-                        JSONObject manifest = new JSONObject();
-                        manifest.put("name", name);
-                        manifest.put("version", version);
-                        manifest.put("type", type);
-                        manifest.put("description", description);
-                        manifest.put("url", pkgUrl);
-                        manifest.put("targetName", targetName);
-                        manifest.put("installedAt", System.currentTimeMillis());
-                        manifest.put("localPath", localFile.getAbsolutePath());
-                        if (targetPkgObj.has("deps")) {
-                            manifest.put("deps", targetPkgObj.getJSONArray("deps"));
-                        }
-
-                        try (FileOutputStream mFos = new FileOutputStream(manifestFile)) {
-                            mFos.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));
-                        }
-
-                        // Handle package type specific logic
-                        switch (type) {
-                            case "apk":
-                                writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Launching Android Package Installer for " + targetName + "...\r\n");
-                                Intent installIntent = new Intent(Intent.ACTION_VIEW);
-                                Uri apkUri = Uri.fromFile(localFile);
-                                installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-                                installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                context.startActivity(installIntent);
-                                writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Package '\033[1;36m" + name + "\033[0m' (APK) saved to $konsole/packages/downloads/ and dispatched to installer!\r\n");
-                                break;
-
-                            case "deb":
-                                File debDir = new File(KonsoleConfigManager.DEB_PATH);
-                                if (!debDir.exists()) debDir.mkdirs();
-                                File debCopy = new File(debDir, name + ".deb");
-                                copyFile(localFile, debCopy);
-
-                                File debBin = new File(KonsoleConfigManager.BIN_PATH, name);
-                                String debStub = "#!/bin/bash/kons\necho \"Executing local .deb package: " + name + " (v" + version + ")\"\n";
-                                try (FileOutputStream fos = new FileOutputStream(debBin)) {
-                                    fos.write(debStub.getBytes(StandardCharsets.UTF_8));
-                                }
-                                debBin.setExecutable(true);
-                                writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Package '\033[1;36m" + name + "\033[0m' (.deb) saved to $konsole/packages/deb/ and registered at $konsole/bin/" + name + "!\r\n");
-                                break;
-
-                            case "kos":
-                                File pluginsDir = new File(KonsoleConfigManager.PLUGINS_PATH);
-                                if (!pluginsDir.exists()) pluginsDir.mkdirs();
-                                File kosFile = new File(pluginsDir, targetName.endsWith(".kos") ? targetName : name + ".kos");
-                                copyFile(localFile, kosFile);
-
-                                File kosBin = new File(KonsoleConfigManager.BIN_PATH, name);
-                                String kosStub = "#!/bin/bash/kons\necho \"Executing Konsole OS Plugin: " + name + " (" + kosFile.getAbsolutePath() + ")\"\n";
-                                try (FileOutputStream fos = new FileOutputStream(kosBin)) {
-                                    fos.write(kosStub.getBytes(StandardCharsets.UTF_8));
-                                }
-                                kosBin.setExecutable(true);
-                                writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Konsole OS Plugin '\033[1;36m" + name + "\033[0m' (.kos) installed to $konsole/plugins/ and registered at $konsole/bin/" + name + "!\r\n");
-                                break;
-
-                            default: // script / sh
-                                File binFile = new File(KonsoleConfigManager.BIN_PATH, name);
-                                copyFile(localFile, binFile);
-                                binFile.setExecutable(true);
-                                writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Executable script '\033[1;36m" + name + "\033[0m' installed to $konsole/bin/" + name + "!\r\n");
-                                break;
-                        }
-                    } else {
-                        createStubPackage(session, pkgName);
+    public static List<JSONObject> parsePackagesFromJson(String jsonBody) {
+        List<JSONObject> results = new ArrayList<>();
+        if (jsonBody == null) return results;
+        String trimmed = jsonBody.trim();
+        if (trimmed.isEmpty()) return results;
+        try {
+            if (trimmed.startsWith("[")) {
+                JSONArray arr = new JSONArray(trimmed);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.optJSONObject(i);
+                    if (obj != null) results.add(obj);
+                }
+            } else {
+                JSONObject root = new JSONObject(trimmed);
+                JSONArray packagesArray = root.optJSONArray("packages");
+                if (packagesArray != null) {
+                    for (int i = 0; i < packagesArray.length(); i++) {
+                        JSONObject obj = packagesArray.optJSONObject(i);
+                        if (obj != null) results.add(obj);
                     }
                 } else {
-                    writeToTerminal(session, "\033[1;33m[Kons Package Manager]\033[0m Package '" + pkgName + "' not found in remote index. Creating local package stub...\r\n");
-                    createStubPackage(session, pkgName);
+                    java.util.Iterator<String> keys = root.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        JSONObject obj = root.optJSONObject(key);
+                        if (obj != null) {
+                            if (!obj.has("name")) obj.put("name", key);
+                            results.add(obj);
+                        }
+                    }
                 }
-            } catch (Exception e) {
-                writeToTerminal(session, "\033[1;33m[Kons Package Manager]\033[0m Repository error (" + e.getMessage() + "). Creating local package stub...\r\n");
-                createStubPackage(session, pkgName);
+            }
+        } catch (Exception ignored) {
+        }
+        return results;
+    }
+
+    private Map<String, JSONObject> fetchPackageCatalog() {
+        Map<String, JSONObject> catalog = new LinkedHashMap<>();
+        for (String endpoint : PACKAGE_ENDPOINTS) {
+            try {
+                String body = httpGetString(endpoint);
+                if (body != null) {
+                    List<JSONObject> parsed = parsePackagesFromJson(body);
+                    for (JSONObject pkgObj : parsed) {
+                        String name = pkgObj.optString("name", "").trim();
+                        if (!name.isEmpty()) {
+                            String key = name.toLowerCase();
+                            if (!catalog.containsKey(key)) {
+                                catalog.put(key, pkgObj);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return catalog;
+    }
+
+    private void searchKonsPackages(TerminalSession session, String query) {
+        final BridgeState bridgeState = markAsyncDeferred();
+        writeToTerminal(session, "\r\n\033[1;36m[Kons Package Manager]\033[0m Querying remote repositories"
+                + (query.isEmpty() ? "" : " for '" + query + "'") + "...\r\n");
+        new Thread(() -> {
+            int code = 0;
+            try {
+                Map<String, JSONObject> catalog = fetchPackageCatalog();
+                if (catalog.isEmpty()) {
+                    writeToSinkOrSession(bridgeState, session, "\r\n\033[1;31m[Kons Package Manager]\033[0m No reachable repositories or empty package catalog.\r\n");
+                    code = 1;
+                    return;
+                }
+                String q = query.toLowerCase();
+                int matches = 0;
+                StringBuilder out = new StringBuilder();
+                out.append("\r\n\033[1;36m====================================================\033[0m\r\n");
+                for (JSONObject p : catalog.values()) {
+                    String name = p.optString("name", "");
+                    String desc = p.optString("description", "");
+                    String type = p.optString("type", "script").toUpperCase();
+                    String ver = p.optString("version", "1.0");
+                    if (q.isEmpty() || name.toLowerCase().contains(q) || desc.toLowerCase().contains(q)) {
+                        boolean installed = new File(KonsoleConfigManager.INSTALLED_PACKAGES_PATH, name.toLowerCase() + ".json").exists()
+                                || new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, name).exists()
+                                || new File(KonsoleConfigManager.BIN_PATH, name).exists();
+                        out.append(" \033[1;33m").append(name).append("\033[0m (v").append(ver).append(") [\033[1;36m").append(type).append("\033[0m]");
+                        if (installed) out.append(" \033[1;32m[INSTALLED]\033[0m");
+                        if (!desc.isEmpty()) out.append("\r\n   ").append(desc);
+                        out.append("\r\n");
+                        matches++;
+                    }
+                }
+                if (matches == 0) {
+                    out.append(" (No packages matched '").append(query).append("')\r\n");
+                }
+                out.append("\033[1;36m====================================================\033[0m\r\n");
+                writeToSinkOrSession(bridgeState, session, out.toString());
+            } finally {
+                completeAsync(bridgeState, code);
+            }
+        }).start();
+    }
+
+    private void removeKonsPackage(Context context, TerminalSession session, String pkgName) {
+        String key = pkgName.trim().toLowerCase();
+        boolean removed = false;
+        String installedType = "";
+        File manifest = new File(KonsoleConfigManager.INSTALLED_PACKAGES_PATH, key + ".json");
+        if (manifest.isFile()) {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(manifest), StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String l;
+                while ((l = br.readLine()) != null) sb.append(l);
+                installedType = new JSONObject(sb.toString()).optString("type", "").toLowerCase();
+            } catch (Exception ignored) {}
+        }
+
+        if ("deb".equals(installedType)) {
+            File dpkgBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "dpkg");
+            if (dpkgBin.canExecute()) {
+                int rc = runPrefixProcess(context, null, session, new String[]{dpkgBin.getAbsolutePath(), "-r", pkgName});
+                if (rc == 0) removed = true;
+            }
+        }
+
+        if (manifest.exists() && manifest.delete()) removed = true;
+        File prefixBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, pkgName);
+        if (prefixBin.exists() && prefixBin.delete()) removed = true;
+        File prefixBinLower = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, key);
+        if (prefixBinLower.exists() && prefixBinLower.delete()) removed = true;
+        File bin = new File(KonsoleConfigManager.BIN_PATH, pkgName);
+        if (bin.exists() && bin.delete()) removed = true;
+        File binLower = new File(KonsoleConfigManager.BIN_PATH, key);
+        if (binLower.exists() && binLower.delete()) removed = true;
+        File kos = new File(KonsoleConfigManager.PLUGINS_PATH, pkgName + ".kos");
+        if (kos.exists() && kos.delete()) removed = true;
+        File deb = new File(KonsoleConfigManager.DEB_PATH, pkgName + ".deb");
+        if (deb.exists() && deb.delete()) removed = true;
+
+        if (removed) {
+            KonsolePathIndexer.getInstance().refreshAsync();
+            writeToTerminal(session, "\r\n\033[1;32m[Kons Package Manager]\033[0m Removed package '\033[1;36m" + pkgName + "\033[0m'.\r\n");
+        } else {
+            writeToTerminal(session, "\r\n\033[1;33m[Kons Package Manager]\033[0m Package '" + pkgName + "' is not installed.\r\n");
+        }
+    }
+
+    private void printSystemTelemetryCard(TerminalSession session) {
+        Map<String, String> v = KonsoleTelemetryManager.getInstance().getLiveVariables();
+        String card = "\r\n\033[1;36m====================================================\033[0m\r\n" +
+                "\033[1;32m            KONSOLE OS LIVE SYSTEM TELEMETRY         \033[0m\r\n" +
+                "\033[1;36m====================================================\033[0m\r\n" +
+                " \033[1;33mDevice :\033[0m " + v.getOrDefault("device_name", Build.MODEL) + "\r\n" +
+                " \033[1;33mOS     :\033[0m " + v.getOrDefault("android_version", "Android") + "\r\n" +
+                " \033[1;33mCPU    :\033[0m " + v.getOrDefault("cpu_cores", "-") + " cores (" + v.getOrDefault("cpu_usage", "-") + ")\r\n" +
+                " \033[1;33mRAM    :\033[0m " + v.getOrDefault("ram_used", "-") + " / " + v.getOrDefault("ram_total", "-") + " (" + v.getOrDefault("ram_free", "-") + " free)\r\n" +
+                " \033[1;33mDisk   :\033[0m " + v.getOrDefault("storage_free", "-") + " free\r\n" +
+                " \033[1;33mBattery:\033[0m " + v.getOrDefault("battery", "-") + "\r\n" +
+                " \033[1;33mNetwork:\033[0m " + v.getOrDefault("network_type", "-") + " (" + v.getOrDefault("wifi_ssid", "-") + ") | " + v.getOrDefault("net_speed", "-") + " | IP: " + v.getOrDefault("ip_address", "-") + "\r\n" +
+                "\033[1;36m====================================================\033[0m\r\n";
+        writeToTerminal(session, card);
+    }
+
+    private void installKonsPackage(Context context, TerminalSession session, String pkgName) {
+        final BridgeState bridgeState = markAsyncDeferred();
+        writeToTerminal(session, "\r\n\033[1;36m[Kons Package Manager]\033[0m Fetching index for '" + pkgName + "'...\r\n");
+        new Thread(() -> {
+            int code = 0;
+            try {
+                java.util.Set<String> visited = new java.util.HashSet<>();
+                code = installPackageInternal(context, bridgeState, session, pkgName, visited);
+            } finally {
+                completeAsync(bridgeState, code);
+            }
+        }).start();
+    }
+
+    private int installPackageInternal(Context context, BridgeState bridgeState, TerminalSession session, String pkgName, java.util.Set<String> visited) {
+        String key = pkgName.trim().toLowerCase();
+        if (!visited.add(key)) return 0;
+
+        HttpURLConnection dlConn = null;
+        try {
+            JSONObject targetPkgObj = null;
+            String sourceEndpoint = null;
+            for (String endpoint : PACKAGE_ENDPOINTS) {
+                try {
+                    String body = httpGetString(endpoint);
+                    if (body != null) {
+                        for (JSONObject pObj : parsePackagesFromJson(body)) {
+                            if (pkgName.equalsIgnoreCase(pObj.optString("name", ""))) {
+                                targetPkgObj = pObj;
+                                sourceEndpoint = endpoint;
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+                if (targetPkgObj != null) break;
+            }
+
+            if (targetPkgObj == null) {
+                writeToSinkOrSession(bridgeState, session, "\033[1;31m[Kons Package Manager]\033[0m Package '" + pkgName + "' not found in remote repositories. Try '\033[1;36mpkg install " + pkgName + "\033[0m' or '\033[1;36mkons search " + pkgName + "\033[0m'.\r\n");
+                return 1;
+            }
+
+            String name = targetPkgObj.optString("name", pkgName).trim();
+            String version = targetPkgObj.optString("version", "1.0");
+            String type = targetPkgObj.optString("type", "script").toLowerCase();
+            String description = targetPkgObj.optString("description", "Custom Konsole package");
+            List<String> candidateUrls = extractPayloadUrls(targetPkgObj, sourceEndpoint);
+            String targetName = targetPkgObj.optString("targetName", targetPkgObj.optString("target", name + "." + type));
+
+            writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Found '\033[1;36m" + name + "\033[0m' v" + version + " [" + type.toUpperCase() + "]\r\n" +
+                    " Description: " + description + "\r\n");
+
+            // Install transitive dependencies if declared
+            JSONArray deps = targetPkgObj.optJSONArray("deps");
+            if (deps != null) {
+                for (int i = 0; i < deps.length(); i++) {
+                    String depName = deps.optString(i, "").trim();
+                    if (!depName.isEmpty() && !visited.contains(depName.toLowerCase())) {
+                        installPackageInternal(context, bridgeState, session, depName, visited);
+                    }
+                }
+            }
+
+            if (candidateUrls.isEmpty()) {
+                writeToSinkOrSession(bridgeState, session, "\033[1;31m[Kons Package Manager]\033[0m Package '" + name + "' has no download URL.\r\n");
+                return 1;
+            }
+
+            File downloadsDir = new File(KonsoleConfigManager.DOWNLOADS_PATH);
+            if (!downloadsDir.exists()) downloadsDir.mkdirs();
+            File localFile = downloadsDir.isDirectory() && downloadsDir.canWrite()
+                    ? new File(downloadsDir, targetName)
+                    : new File(context.getCacheDir(), targetName);
+
+            int lastHttpCode = -1;
+            String lastErrorMsg = null;
+            String successfulUrl = null;
+            byte[] downloadedBytes = null;
+
+            for (int idx = 0; idx < candidateUrls.size(); idx++) {
+                String candidateUrl = candidateUrls.get(idx);
+                writeToSinkOrSession(bridgeState, session, "\033[1;36m[Kons Package Manager]\033[0m Checking URL [" + (idx + 1) + "/" + candidateUrls.size() + "]: " + candidateUrl + "...\r\n");
+                HttpURLConnection attemptConn = null;
+                try {
+                    attemptConn = openConnectionWithRedirects(candidateUrl);
+                    int httpCode = attemptConn.getResponseCode();
+                    if (httpCode == HttpURLConnection.HTTP_OK) {
+                        try (InputStream is = attemptConn.getInputStream()) {
+                            downloadedBytes = readStreamBytes(is);
+                        }
+                        if (downloadedBytes != null && downloadedBytes.length > 0) {
+                            successfulUrl = candidateUrl;
+                            writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Verified HTTP 200 OK (" + downloadedBytes.length + " bytes) -> installing from " + candidateUrl + "\r\n");
+                            break;
+                        } else {
+                            lastHttpCode = httpCode;
+                            lastErrorMsg = "HTTP 200 returned empty payload from " + candidateUrl;
+                            downloadedBytes = null;
+                        }
+                    } else {
+                        lastHttpCode = httpCode;
+                        lastErrorMsg = "HTTP " + httpCode + " (" + attemptConn.getResponseMessage() + ") from " + candidateUrl;
+                        writeToSinkOrSession(bridgeState, session, "\033[1;33m[Kons Package Manager]\033[0m " + lastErrorMsg + (idx + 1 < candidateUrls.size() ? " (trying backup URL...)" : "") + "\r\n");
+                    }
+                } catch (Exception ex) {
+                    lastErrorMsg = ex.getClass().getSimpleName() + ": " + ex.getMessage() + " (" + candidateUrl + ")";
+                    writeToSinkOrSession(bridgeState, session, "\033[1;33m[Kons Package Manager]\033[0m Error: " + lastErrorMsg + (idx + 1 < candidateUrls.size() ? " (trying backup URL...)" : "") + "\r\n");
+                } finally {
+                    if (attemptConn != null) attemptConn.disconnect();
+                }
+            }
+
+            if (downloadedBytes == null || successfulUrl == null) {
+                String reason = lastHttpCode > 0 ? lastErrorMsg : (lastErrorMsg != null ? lastErrorMsg : "No URL returned HTTP 200");
+                writeToSinkOrSession(bridgeState, session, "\033[1;31m[Kons Package Manager]\033[0m Download failed across " + candidateUrls.size() + " URL(s): " + reason + "\r\n");
+                return 1;
+            }
+
+            try {
+                try (FileOutputStream fos = new FileOutputStream(localFile)) {
+                    fos.write(downloadedBytes);
+                }
+            } catch (Exception writeErr) {
+                localFile = new File(context.getCacheDir(), targetName);
+                try (FileOutputStream fos = new FileOutputStream(localFile)) {
+                    fos.write(downloadedBytes);
+                }
+            }
+
+            String pkgUrl = successfulUrl;
+
+            File prefixBinDir = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH);
+            String installedDest = localFile.getAbsolutePath();
+            int exitCode = 0;
+
+            switch (type) {
+                case "apk":
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Launching Android Package Installer for " + targetName + "...\r\n");
+                    launchApkInstaller(context, localFile);
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Package '\033[1;36m" + name + "\033[0m' (APK) saved to $konsole/packages/downloads/ and dispatched to installer!\r\n");
+                    break;
+
+                case "deb":
+                    File debDir = new File(KonsoleConfigManager.DEB_PATH);
+                    if (!debDir.exists()) debDir.mkdirs();
+                    if (debDir.isDirectory()) {
+                        try {
+                            copyFile(localFile, new File(debDir, name + ".deb"));
+                        } catch (Exception ignored) {}
+                    }
+
+                    File tmpDir = new File(TermuxConstants.TERMUX_TMP_PREFIX_DIR_PATH);
+                    if (!tmpDir.exists()) tmpDir.mkdirs();
+                    File stagedDeb = tmpDir.isDirectory() ? new File(tmpDir, name + ".deb") : localFile;
+                    if (!stagedDeb.equals(localFile)) {
+                        copyFile(localFile, stagedDeb);
+                    }
+                    installedDest = stagedDeb.getAbsolutePath();
+
+                    exitCode = installDebViaDpkg(context, bridgeState, session, name, stagedDeb);
+                    KonsolePathIndexer.getInstance().refreshAsync();
+                    break;
+
+                case "kos":
+                    File pluginsDir = new File(KonsoleConfigManager.PLUGINS_PATH);
+                    if (!pluginsDir.exists()) pluginsDir.mkdirs();
+                    if (pluginsDir.isDirectory()) {
+                        try {
+                            File kosFile = new File(pluginsDir, targetName.endsWith(".kos") ? targetName : name + ".kos");
+                            copyFile(localFile, kosFile);
+                        } catch (Exception ignored) {}
+                    }
+
+                    File installedKosBin = installExecutableIntoPrefix(localFile, prefixBinDir, name, "kos");
+                    installedDest = installedKosBin.getAbsolutePath();
+                    mirrorToExternalBinBestEffort(installedKosBin, name);
+                    KonsolePathIndexer.getInstance().refreshAsync();
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Plugin '\033[1;36m" + name + "\033[0m' installed to \033[1;33m" + installedDest + "\033[0m (on $PATH & executable).\r\n");
+                    if (isShellBuiltinName(name)) {
+                        writeToSinkOrSession(bridgeState, session, "\033[1;33m[Note]\033[0m '" + name + "' is also a shell builtin. Run it using '\033[1;36mkons run " + name + "\033[0m', '\033[1;36mcommand " + name + "\033[0m', or '\033[1;36m" + installedDest + "\033[0m'.\r\n");
+                    }
+                    break;
+
+                default: // script / sh / fish / binary
+                    File installedScriptBin = installExecutableIntoPrefix(localFile, prefixBinDir, name, type);
+                    installedDest = installedScriptBin.getAbsolutePath();
+                    mirrorToExternalBinBestEffort(installedScriptBin, name);
+                    KonsolePathIndexer.getInstance().refreshAsync();
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Executable '\033[1;36m" + name + "\033[0m' installed to \033[1;33m" + installedDest + "\033[0m (on $PATH & executable).\r\n");
+                    if (isShellBuiltinName(name)) {
+                        writeToSinkOrSession(bridgeState, session, "\033[1;33m[Note]\033[0m '" + name + "' is also a shell builtin. Run it using '\033[1;36mkons run " + name + "\033[0m', '\033[1;36mcommand " + name + "\033[0m', or '\033[1;36m" + installedDest + "\033[0m'.\r\n");
+                    }
+                    break;
+            }
+
+            // Save local metadata manifest copy
+            File installedDir = new File(KonsoleConfigManager.INSTALLED_PACKAGES_PATH);
+            if (!installedDir.exists()) installedDir.mkdirs();
+            if (installedDir.isDirectory()) {
+                File manifestFile = new File(installedDir, name.toLowerCase() + ".json");
+                JSONObject manifest = new JSONObject();
+                manifest.put("name", name);
+                manifest.put("version", version);
+                manifest.put("type", type);
+                manifest.put("description", description);
+                manifest.put("url", pkgUrl);
+                if (candidateUrls.size() > 1) {
+                    manifest.put("urls", new JSONArray(candidateUrls));
+                }
+                manifest.put("targetName", targetName);
+                manifest.put("installedAt", System.currentTimeMillis());
+                manifest.put("localPath", localFile.getAbsolutePath());
+                manifest.put("prefixInstalledPath", installedDest);
+                if (deps != null) {
+                    manifest.put("deps", deps);
+                }
+                try (FileOutputStream mFos = new FileOutputStream(manifestFile)) {
+                    mFos.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            return exitCode;
+        } catch (Exception e) {
+            writeToSinkOrSession(bridgeState, session, "\033[1;31m[Kons Package Manager]\033[0m Installation failed: " + e.getMessage() + "\r\n");
+            return 1;
+        } finally {
+            if (dlConn != null) dlConn.disconnect();
+        }
+    }
+
+    /**
+     * Extracts all candidate download URLs from a package JSON entry in priority order.
+     * Supports "url" as either a JSONArray or a String, plus "urls", "mirrors", "backup_urls", and "backup_url".
+     */
+    public static List<String> extractPayloadUrls(JSONObject pkgObj, String sourceEndpoint) {
+        java.util.LinkedHashSet<String> urls = new java.util.LinkedHashSet<>();
+        if (pkgObj == null) return new ArrayList<>();
+
+        String[] fields = new String[]{"url", "urls", "mirrors", "backup_urls", "backup_url"};
+        for (String field : fields) {
+            Object val = pkgObj.opt(field);
+            if (val instanceof JSONArray) {
+                JSONArray arr = (JSONArray) val;
+                for (int i = 0; i < arr.length(); i++) {
+                    String raw = arr.optString(i, "").trim();
+                    addResolvedCandidates(urls, raw, sourceEndpoint);
+                }
+            } else if (val instanceof String) {
+                String raw = ((String) val).trim();
+                if (!raw.isEmpty()) {
+                    // Also support comma-separated URLs if someone puts multiple http(s) URLs in one string
+                    if (raw.matches("(?i)^https?://.*,\\s*https?://.*")) {
+                        for (String part : raw.split("\\s*,\\s*")) {
+                            addResolvedCandidates(urls, part.trim(), sourceEndpoint);
+                        }
+                    } else {
+                        addResolvedCandidates(urls, raw, sourceEndpoint);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(urls);
+    }
+
+    private static void addResolvedCandidates(java.util.LinkedHashSet<String> out, String rawUrl, String sourceEndpoint) {
+        if (rawUrl == null || rawUrl.isEmpty()) return;
+        String resolved = rawUrl;
+        if (!resolved.startsWith("http://") && !resolved.startsWith("https://") && sourceEndpoint != null) {
+            try {
+                resolved = new URL(new URL(sourceEndpoint), resolved).toString();
+            } catch (Exception ignored) {}
+        }
+        out.addAll(buildCandidatePayloadUrls(resolved, sourceEndpoint));
+    }
+
+    public static boolean isShellBuiltinName(String name) {
+        if (name == null) return false;
+        switch (name.trim().toLowerCase()) {
+            case "test":
+            case "[":
+            case "cd":
+            case "echo":
+            case "pwd":
+            case "set":
+            case "unset":
+            case "true":
+            case "false":
+            case "kill":
+            case "time":
+            case "printf":
+            case "read":
+            case "exec":
+            case "eval":
+            case "command":
+            case "source":
+            case "type":
+            case "alias":
+            case "export":
+            case "exit":
+            case "shift":
+            case "return":
+            case "break":
+            case "continue":
+            case "switch":
+            case "status":
+            case "string":
+            case "math":
+            case "random":
+            case "functions":
+            case "builtin":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void runInstalledPackage(Context context, TerminalSession session, String[] parts) {
+        final BridgeState bridgeState = markAsyncDeferred();
+        new Thread(() -> {
+            int code = 1;
+            try {
+                String targetName = parts[2].trim();
+                File target = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, targetName);
+                if (!target.exists()) {
+                    File lowerTarget = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, targetName.toLowerCase());
+                    if (lowerTarget.exists()) target = lowerTarget;
+                }
+                if (!target.exists()) {
+                    File extTarget = new File(KonsoleConfigManager.BIN_PATH, targetName);
+                    if (extTarget.exists()) target = extTarget;
+                }
+                if (!target.exists()) {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;31m[Konsole OS]\033[0m Installed executable '" + targetName
+                            + "' not found under " + TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ". Try 'kons install " + targetName + "' or 'kons list'.\r\n");
+                    return;
+                }
+
+                target.setExecutable(true, false);
+                try {
+                    //noinspection OctalInteger
+                    android.system.Os.chmod(target.getAbsolutePath(), 0755);
+                } catch (Throwable ignored) {}
+
+                String[] cmd = new String[parts.length - 2];
+                cmd[0] = target.getAbsolutePath();
+                if (parts.length > 3) {
+                    System.arraycopy(parts, 3, cmd, 1, parts.length - 3);
+                }
+                code = runPrefixProcess(context, bridgeState, session, cmd, "");
+            } finally {
+                completeAsync(bridgeState, code);
+            }
+        }).start();
+    }
+
+    /**
+     * Installs a downloaded script, binary, or .kos bundle directly into {@code prefixBinDir}
+     * (e.g. /data/data/com.termux/files/usr/bin) with 0755 permissions and Termux-compatible shebangs
+     * so commands execute directly on $PATH without Android external-storage noexec restrictions.
+     */
+    public static File installExecutableIntoPrefix(File payloadFile, File prefixBinDir, String commandName, String packageType) throws java.io.IOException {
+        if (!prefixBinDir.exists() && !prefixBinDir.mkdirs()) {
+            throw new java.io.IOException("Failed creating bin directory: " + prefixBinDir.getAbsolutePath());
+        }
+
+        byte[] payloadBytes = readFileBytes(payloadFile);
+        if (payloadBytes.length >= 2 && payloadBytes[0] == 'P' && payloadBytes[1] == 'K') {
+            byte[] extracted = extractEntryFromKosZip(payloadFile, commandName);
+            if (extracted != null && extracted.length > 0) {
+                payloadBytes = extracted;
+            }
+        }
+
+        boolean isElf = payloadBytes.length >= 4
+                && payloadBytes[0] == 0x7F && payloadBytes[1] == 'E'
+                && payloadBytes[2] == 'L' && payloadBytes[3] == 'F';
+
+        if (!isElf) {
+            String prefixPath = prefixBinDir.getParentFile() != null
+                    ? prefixBinDir.getParentFile().getAbsolutePath()
+                    : TermuxConstants.TERMUX_PREFIX_DIR_PATH;
+            String text = new String(payloadBytes, StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n");
+
+            if (text.startsWith("#!")) {
+                int nl = text.indexOf('\n');
+                String firstLine = nl >= 0 ? text.substring(0, nl) : text;
+                String rest = nl >= 0 ? text.substring(nl) : "";
+                String rewritten = rewriteShebangLine(firstLine, prefixPath);
+                text = rewritten + rest;
+            } else {
+                String shPath = new File(prefixPath, "bin/sh").exists() ? (prefixPath + "/bin/sh") : "/system/bin/sh";
+                String defaultInterp = "fish".equalsIgnoreCase(packageType)
+                        ? prefixPath + "/bin/fish"
+                        : shPath;
+                text = "#!" + defaultInterp + "\n" + text;
+            }
+            payloadBytes = text.getBytes(StandardCharsets.UTF_8);
+        }
+
+        File targetBin = new File(prefixBinDir, commandName);
+        try (FileOutputStream fos = new FileOutputStream(targetBin)) {
+            fos.write(payloadBytes);
+        }
+        targetBin.setExecutable(true, false);
+        try {
+            //noinspection OctalInteger
+            android.system.Os.chmod(targetBin.getAbsolutePath(), 0755);
+        } catch (Throwable ignored) {
+        }
+        return targetBin;
+    }
+
+    private static String rewriteShebangLine(String firstLine, String prefixPath) {
+        String trimmed = firstLine.substring(2).trim();
+        if (trimmed.startsWith("/usr/bin/env ")) {
+            String arg = trimmed.substring("/usr/bin/env ".length()).trim();
+            return "#!" + prefixPath + "/bin/env " + arg;
+        }
+        if (trimmed.equals("/bin/bash") || trimmed.equals("/usr/bin/bash")) {
+            return "#!" + prefixPath + "/bin/bash";
+        }
+        if (trimmed.equals("/bin/sh") || trimmed.equals("/usr/bin/sh")) {
+            return new File(prefixPath, "bin/sh").exists()
+                    ? "#!" + prefixPath + "/bin/sh"
+                    : "#!/system/bin/sh";
+        }
+        if (trimmed.equals("/bin/fish") || trimmed.equals("/usr/bin/fish")) {
+            return "#!" + prefixPath + "/bin/fish";
+        }
+        if (trimmed.equals("/bin/zsh") || trimmed.equals("/usr/bin/zsh")) {
+            return "#!" + prefixPath + "/bin/zsh";
+        }
+        return firstLine;
+    }
+
+    private static byte[] extractEntryFromKosZip(File zipFile, String commandName) {
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new FileInputStream(zipFile))) {
+            java.util.zip.ZipEntry entry;
+            byte[] fallback = null;
+            String[] preferredNames = new String[]{
+                "bin/" + commandName, commandName, "run.fish", "main.fish", "run.sh", "main.sh"
+            };
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String ename = entry.getName();
+                byte[] entryBytes = readStreamBytes(zis);
+                for (String pref : preferredNames) {
+                    if (ename.equalsIgnoreCase(pref)) {
+                        return entryBytes;
+                    }
+                }
+                if (fallback == null && !ename.endsWith(".json") && !ename.endsWith(".md")) {
+                    fallback = entryBytes;
+                }
+            }
+            return fallback;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static byte[] readFileBytes(File file) throws java.io.IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            return readStreamBytes(fis);
+        }
+    }
+
+    private static byte[] readStreamBytes(InputStream in) throws java.io.IOException {
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int r;
+        while ((r = in.read(buf)) != -1) {
+            baos.write(buf, 0, r);
+        }
+        return baos.toByteArray();
+    }
+
+    static List<String> buildCandidatePayloadUrls(String pkgUrl, String sourceEndpoint) {
+        java.util.LinkedHashSet<String> urls = new java.util.LinkedHashSet<>();
+        if (pkgUrl != null && !pkgUrl.trim().isEmpty()) {
+            urls.add(pkgUrl.trim());
+        }
+        try {
+            if (pkgUrl != null && sourceEndpoint != null) {
+                URL payload = new URL(pkgUrl.trim());
+                URL source = new URL(sourceEndpoint);
+                String srcPath = source.getPath();
+                int lastSlash = srcPath != null ? srcPath.lastIndexOf('/') : -1;
+                if (lastSlash > 0 && payload.getHost().equalsIgnoreCase(source.getHost())) {
+                    String repoPrefix = srcPath.substring(0, lastSlash);
+                    String payloadPath = payload.getPath();
+                    if (payloadPath != null && !payloadPath.startsWith(repoPrefix + "/")) {
+                        String combinedPath = repoPrefix + (payloadPath.startsWith("/") ? payloadPath : "/" + payloadPath);
+                        urls.add(new URL(source.getProtocol(), source.getHost(), source.getPort(), combinedPath).toString());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return new ArrayList<>(urls);
+    }
+
+    private static HttpURLConnection openConnectionWithRedirects(String urlStr) throws java.io.IOException {
+        String current = urlStr;
+        for (int i = 0; i < 5; i++) {
+            URL url = new URL(current);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("User-Agent", "KonsoleOS-PkgManager");
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == 307 || code == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null || location.trim().isEmpty()) {
+                    throw new java.io.IOException("HTTP " + code + " redirect missing Location header from " + current);
+                }
+                current = new URL(url, location.trim()).toString();
+                continue;
+            }
+            return conn;
+        }
+        throw new java.io.IOException("Too many redirects downloading " + urlStr);
+    }
+
+    private void mirrorToExternalBinBestEffort(File installedBin, String name) {
+        try {
+            File extBin = new File(KonsoleConfigManager.BIN_PATH, name);
+            copyFile(installedBin, extBin);
+            extBin.setExecutable(true, false);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private int installDebViaDpkg(Context context, BridgeState bridgeState, TerminalSession session, String pkgName, File debFile) {
+        com.termux.app.TermuxInstaller.ensureAptAndPkgConfigured(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+        File dpkgBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "dpkg");
+        if (!dpkgBin.isFile()) {
+            writeToSinkOrSession(bridgeState, session, "\033[1;33m[Kons Package Manager]\033[0m .deb saved to " + debFile.getAbsolutePath()
+                    + ", but dpkg binary was not found at " + dpkgBin.getAbsolutePath() + ".\r\n");
+            return 1;
+        }
+
+        writeToSinkOrSession(bridgeState, session, "\033[1;36m[Kons Package Manager]\033[0m Installing " + pkgName + " via dpkg -i...\r\n");
+        int rc = runPrefixProcess(context, bridgeState, session, new String[]{dpkgBin.getAbsolutePath(), "-i", debFile.getAbsolutePath()});
+        if (rc != 0) {
+            File aptGetBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "apt-get");
+            if (aptGetBin.isFile()) {
+                writeToSinkOrSession(bridgeState, session, "\033[1;33m[Kons Package Manager]\033[0m Resolving dependencies with apt-get install -f -y...\r\n");
+                rc = runPrefixProcess(context, bridgeState, session, new String[]{aptGetBin.getAbsolutePath(), "install", "-f", "-y"});
+            }
+        }
+        if (rc == 0) {
+            writeToSinkOrSession(bridgeState, session, "\033[1;32m[Kons Package Manager]\033[0m Installed .deb package '\033[1;36m" + pkgName + "\033[0m' successfully!\r\n");
+        } else {
+            writeToSinkOrSession(bridgeState, session, "\033[1;31m[Kons Package Manager]\033[0m dpkg exited with code " + rc + ".\r\n");
+        }
+        return rc;
+    }
+
+    private int runPrefixProcess(Context context, BridgeState bridgeState, TerminalSession session, String[] cmd) {
+        return runPrefixProcess(context, bridgeState, session, cmd, "  ");
+    }
+
+    private int runPrefixProcess(Context context, BridgeState bridgeState, TerminalSession session, String[] cmd, String linePrefix) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            File homeDir = new File(TermuxConstants.TERMUX_HOME_DIR_PATH);
+            if (homeDir.isDirectory()) {
+                pb.directory(homeDir);
+            }
+            java.util.HashMap<String, String> env = new com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment()
+                    .getEnvironment(context, false);
+            pb.environment().putAll(env);
+            pb.environment().put("DEBIAN_FRONTEND", "noninteractive");
+            pb.environment().put("PATH", TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":/system/bin:/system/xbin");
+
+            Process p = pb.start();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                String prefix = linePrefix != null ? linePrefix : "";
+                while ((line = br.readLine()) != null) {
+                    writeToSinkOrSession(bridgeState, session, prefix + line + "\r\n");
+                }
+            }
+            return p.waitFor();
+        } catch (Exception e) {
+            writeToSinkOrSession(bridgeState, session, "\033[1;31m[Exec Error]\033[0m " + e.getMessage() + "\r\n");
+            return 1;
+        }
+    }
+
+    private void installAndConfigureFishShell(Context context, TerminalSession session) {
+        final BridgeState bridgeState = markAsyncDeferred();
+        new Thread(() -> {
+            int code = 0;
+            try {
+                com.termux.app.TermuxInstaller.ensureAptAndPkgConfigured(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+                File fishBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "fish");
+                if (fishBin.isFile() && fishBin.canExecute()) {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Fish Shell]\033[0m Fish is already installed at " + fishBin.getAbsolutePath()
+                            + ". Konsole OS Fish scripts updated! Run '\033[1;36mexec fish -l\033[0m' to reload.\r\n");
+                    return;
+                }
+
+                File pkgBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "pkg");
+                File aptGetBin = new File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH, "apt-get");
+                if (pkgBin.isFile()) {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;36m[Fish Shell]\033[0m Installing Fish shell via pkg...\r\n");
+                    runPrefixProcess(context, bridgeState, session, new String[]{pkgBin.getAbsolutePath(), "update", "-y"});
+                    code = runPrefixProcess(context, bridgeState, session, new String[]{pkgBin.getAbsolutePath(), "install", "-y", "fish"});
+                } else if (aptGetBin.isFile()) {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;36m[Fish Shell]\033[0m Installing Fish shell via apt-get...\r\n");
+                    runPrefixProcess(context, bridgeState, session, new String[]{aptGetBin.getAbsolutePath(), "update", "-y"});
+                    code = runPrefixProcess(context, bridgeState, session, new String[]{aptGetBin.getAbsolutePath(), "install", "-y", "fish"});
+                } else {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;31m[Fish Shell]\033[0m Neither pkg nor apt-get found under " + TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ".\r\n");
+                    code = 1;
+                    return;
+                }
+
+                com.termux.app.TermuxInstaller.ensureAptAndPkgConfigured(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+                KonsolePathIndexer.getInstance().refreshAsync();
+                if (code == 0) {
+                    writeToSinkOrSession(bridgeState, session, "\033[1;32m[Fish Shell]\033[0m Fish installed & configured! Start immediately with '\033[1;36mexec fish -l\033[0m' or open a new session.\r\n");
+                }
+            } finally {
+                completeAsync(bridgeState, code);
             }
         }).start();
     }
@@ -656,34 +1520,12 @@ public class KonsoleCommandDispatcher {
         }
     }
 
-    private void createStubPackage(TerminalSession session, String pkgName) {
-        try {
-            File binFile = new File(KonsoleConfigManager.BIN_PATH, pkgName);
-            File parent = binFile.getParentFile();
-            if (parent != null && !parent.exists()) {
-                parent.mkdirs();
-            }
-            if (parent == null || !parent.exists()) {
-                writeToTerminal(session, "\033[1;31m[Kons Package Manager]\033[0m Error: Cannot create bin directory for stub script.\r\n");
-                return;
-            }
-            String stub = "#!/bin/bash/kons\necho \"Executing local kons package: " + pkgName + "\"\n";
-            try (FileOutputStream fos = new FileOutputStream(binFile)) {
-                fos.write(stub.getBytes(StandardCharsets.UTF_8));
-            }
-            binFile.setExecutable(true);
-            writeToTerminal(session, "\033[1;32m[Kons Package Manager]\033[0m Installed local stub script for '\033[1;36m" + pkgName + "\033[0m' at $konsole/bin/" + pkgName + "\r\n");
-        } catch (Exception e) {
-            writeToTerminal(session, "\033[1;31m[Kons Package Manager]\033[0m Error creating package: " + e.getMessage() + "\r\n");
-        }
-    }
-
     private void printHelpManual(TerminalSession session) {
         String help = "\r\n\033[1;36m=====================================================================\033[0m\r\n" +
-                "\033[1;32m                     KONSOLE OS COMMAND MANUAL                       \033[0m\r\n" +
+                "\033[1;32m               KONSOLE OS COMMAND MANUAL (FISH SHELL)                \033[0m\r\n" +
                 "\033[1;36m=====================================================================\033[0m\r\n\n" +
                 "\033[1;33m[ System & Apps ]\033[0m\r\n" +
-                "  <app-name>              - Fuzzy-launch installed Android apps\r\n" +
+                "  <app-name>              - Fuzzy-launch installed Android apps (via Fish)\r\n" +
                 "  uninstall <app-name>    - Uninstall specified Android app\r\n" +
                 "  settings [wifi|bt|apps] - Open Android system settings\r\n\n" +
                 "\033[1;33m[ Hardware & Connectivity ]\033[0m\r\n" +
@@ -703,16 +1545,27 @@ public class KonsoleCommandDispatcher {
                 "  vibrate <pattern>       - Vibrate pattern (e.g. 0,300,500)\r\n" +
                 "  beep <pattern>          - Play audio tone sequence\r\n" +
                 "  calc <expression>       - Evaluate math expression\r\n\n" +
-                "\033[1;33m[ Kons OS Management Suite ]\033[0m\r\n" +
+                "\033[1;33m[ Kons OS Management & Automation ]\033[0m\r\n" +
+                "  kons dashboard          - Open live system stats, path & toggle Dashboard\r\n" +
+                "  kons macro              - Open visual UI Macro Lab (triggers, cron & tests)\r\n" +
+                "  macro <lab|list|trigger|notify|toast|flash|tap|swipe>\r\n" +
+                "                          - Bidirectional script-to-Android automation CLI\r\n" +
+                "  kons setup-fish         - Install/update native Fish shell environment\r\n" +
                 "  kons apps               - Terminal-styled GUI apps grid\r\n" +
+                "  kons palette            - Open fuzzy Command Palette (also HUD CMD)\r\n" +
+                "  kons sys                - Live hardware, CPU, RAM & network telemetry\r\n" +
+                "  kons hud <on|off>       - Show or hide top telemetry HUD bar\r\n" +
+                "  kons search [query]     - Search remote Konsole OS package catalog\r\n" +
+                "  kons install <pkg>      - Install script/kos ($PREFIX/bin) or deb (dpkg -i)\r\n" +
+                "  kons run <pkg> [args]   - Run installed package directly (bypasses shell builtins)\r\n" +
+                "  kons remove <pkg>       - Remove installed kons package\r\n" +
+                "  kons list               - List installed kons packages\r\n" +
                 "  kons set <key=val>      - Save persistent user variable\r\n" +
                 "  kons alias <name=val>   - Create command shortcut alias\r\n" +
                 "  kons notify <t> <m>     - Send native system notification\r\n" +
                 "  kons toast <msg>        - Display screen toast message\r\n" +
-                "  kons list               - List installed kons packages\r\n" +
-                "  kons install <pkg>      - Install/download kons package\r\n" +
                 "  kons update             - Check & install Konsole OS OTA updates\r\n" +
-                "  kons switch <termux|konsole> - Toggle OS launcher mode\r\n" +
+                "  kons switch <termux|konsole> - Toggle Fish shell OS integration mode\r\n" +
                 "\033[1;36m=====================================================================\033[0m\r\n";
         writeToTerminal(session, help);
     }
@@ -822,13 +1675,27 @@ public class KonsoleCommandDispatcher {
                 return true;
 
             case "on":
-                wm.setWifiEnabled(true);
-                writeToTerminal(session, "\r\n\033[1;32m[Wi-Fi]\033[0m Enabling Wi-Fi...\r\n");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
+                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(panelIntent);
+                    writeToTerminal(session, "\r\n\033[1;33m[Wi-Fi]\033[0m Android 10+ restricts background Wi-Fi toggles. Opening Wi-Fi Quick Panel...\r\n");
+                } else {
+                    wm.setWifiEnabled(true);
+                    writeToTerminal(session, "\r\n\033[1;32m[Wi-Fi]\033[0m Enabling Wi-Fi...\r\n");
+                }
                 return true;
 
             case "off":
-                wm.setWifiEnabled(false);
-                writeToTerminal(session, "\r\n\033[1;33m[Wi-Fi]\033[0m Disabling Wi-Fi...\r\n");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    Intent panelIntent = new Intent(Settings.Panel.ACTION_WIFI);
+                    panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(panelIntent);
+                    writeToTerminal(session, "\r\n\033[1;33m[Wi-Fi]\033[0m Android 10+ restricts background Wi-Fi toggles. Opening Wi-Fi Quick Panel...\r\n");
+                } else {
+                    wm.setWifiEnabled(false);
+                    writeToTerminal(session, "\r\n\033[1;33m[Wi-Fi]\033[0m Disabling Wi-Fi...\r\n");
+                }
                 return true;
 
             case "ls":
@@ -1055,7 +1922,12 @@ public class KonsoleCommandDispatcher {
     }
 
     private boolean handleCalc(TerminalSession session, String line) {
-        String expr = line.substring(line.indexOf(' ') + 1).trim();
+        int spaceIdx = line.indexOf(' ');
+        String expr = spaceIdx >= 0 ? line.substring(spaceIdx + 1).trim() : "";
+        if (expr.isEmpty()) {
+            writeToTerminal(session, "\r\nUsage: calc <expression> (e.g. calc (2+3)*4, calc sqrt(144))\r\n");
+            return true;
+        }
         try {
             double res = evaluateExpression(expr);
             writeToTerminal(session, "\r\n\033[1;32m[Calc]\033[0m " + expr + " = \033[1;36m" + res + "\033[0m\r\n");
@@ -1366,7 +2238,7 @@ public class KonsoleCommandDispatcher {
             activity.startLockTask();
             writeToTerminal(session, "\r\n\033[1;33m[Konsole OS Screen Lock Active]\033[0m\r\n" +
                     " \033[1;36mTo enable True Kiosk Lock (blocking Notification Shade & Home button completely), grant Device Owner via ADB:\033[0m\r\n" +
-                    " adb shell dpm set-device-owner com.huntech.konsoleos/.konsole.KonsoleDeviceAdminReceiver\r\n");
+                    " adb shell dpm set-device-owner " + TermuxConstants.TERMUX_PACKAGE_NAME + "/.app.konsole.KonsoleDeviceAdminReceiver\r\n");
         } catch (Exception e) {
             writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m Could not start screen lock: " + e.getMessage() + "\r\n");
         }
@@ -1405,7 +2277,7 @@ public class KonsoleCommandDispatcher {
     private boolean handleClearHome(TerminalSession session) {
         if (session != null) {
             session.appendToEmulator("\033[H\033[2J");
-            writeToTerminal(session, "\033[1;32mKonsole OS v1.0.0-35mos\033[0m (com.huntech.konsoleos)\r\nType '\033[1;36mkons help\033[0m' for available commands.\r\n");
+            writeToTerminal(session, "\033[1;32mKonsole OS v1.0.0-35mos\033[0m (" + TermuxConstants.TERMUX_PACKAGE_NAME + ")\r\nType '\033[1;36mkons help\033[0m' for available commands.\r\n");
         }
         return true;
     }
@@ -1456,11 +2328,65 @@ public class KonsoleCommandDispatcher {
         }
 
         writeToTerminal(session, "\r\n\033[1;33m[Uninstall]\033[0m Prompting uninstall for package: " + pkgToUninstall + "\r\n");
-        Intent uIntent = new Intent(Intent.ACTION_UNINSTALL_PACKAGE);
+        Intent uIntent = new Intent(Intent.ACTION_DELETE);
         uIntent.setData(Uri.parse("package:" + pkgToUninstall));
-        uIntent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
         uIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(uIntent);
+        return true;
+    }
+
+    private boolean openDashboardActivity(Context context, TerminalSession session) {
+        if (context == null) return false;
+        Intent intent = new Intent(context, KonsoleDashboardActivity.class);
+        if (!(context instanceof android.app.Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        context.startActivity(intent);
+        writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Opening Konsole Dashboard...\r\n");
+        return true;
+    }
+
+    private boolean openMacroLabActivity(Context context, TerminalSession session) {
+        if (context == null) return false;
+        Intent intent = new Intent(context, KonsoleMacroLabActivity.class);
+        if (!(context instanceof android.app.Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        context.startActivity(intent);
+        writeToTerminal(session, "\r\n\033[1;32m[Konsole OS]\033[0m Opening Konsole Macro Lab...\r\n");
+        return true;
+    }
+
+    private boolean dispatchMacroCommand(Context context, TerminalSession session, String rawLine, String[] parts) {
+        if ("macrolab".equalsIgnoreCase(parts[0])) {
+            return openMacroLabActivity(context, session);
+        }
+        String args = rawLine.length() > parts[0].length()
+                ? rawLine.substring(parts[0].length()).trim()
+                : "";
+        return runMacroCliToSession(context, session, args);
+    }
+
+    private boolean runMacroCliToSession(Context context, TerminalSession session, String args) {
+        final BridgeState bridgeState = mBridgeState.get();
+        final StringBuilder out = new StringBuilder();
+        KonsoleAutomationEngine.getInstance().handleMacroCli(context, new CommandSink() {
+            @Override
+            public void write(String text) {
+                if (bridgeState != null && bridgeState.sink != null) {
+                    bridgeState.sink.write(text);
+                } else if (text != null) {
+                    out.append(text);
+                }
+            }
+
+            @Override
+            public void finish(int exitCode) {
+                if (bridgeState == null || bridgeState.sink == null) {
+                    writeToTerminal(session, "\r\n" + out.toString());
+                }
+            }
+        }, args);
         return true;
     }
 
@@ -1498,22 +2424,38 @@ public class KonsoleCommandDispatcher {
     }
 
     private void showToast(Context context, String message) {
-        if (context instanceof TermuxActivity) {
-            ((TermuxActivity) context).runOnUiThread(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
+        Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+        if (uiCtx instanceof android.app.Activity) {
+            ((android.app.Activity) uiCtx).runOnUiThread(() -> Toast.makeText(uiCtx, message, Toast.LENGTH_SHORT).show());
         }
     }
 
     public String getPrompt(TerminalSession session) {
         String cwd = session != null ? session.getCwd() : null;
         if (cwd == null || cwd.isEmpty()) cwd = "~";
-        String home = "/data/data/com.huntech.konsoleos/files/home";
+        String home = TermuxConstants.TERMUX_HOME_DIR_PATH;
         if (cwd.equals(home)) cwd = "~";
         else if (cwd.startsWith(home)) cwd = "~" + cwd.substring(home.length());
 
         return "\033[1;36mkonsole\033[1;32m@\033[1;35mos\033[0m:\033[1;34m" + cwd + "\033[0m\033[1;32m$\033[0m ";
     }
 
+    private void writeToSinkOrSession(BridgeState bridgeState, TerminalSession session, String output) {
+        if (bridgeState != null && bridgeState.sink != null) {
+            bridgeState.sink.write(output);
+        } else {
+            writeToTerminal(session, output);
+        }
+    }
+
     private void writeToTerminal(TerminalSession session, String output) {
+        BridgeState bridgeState = mBridgeState.get();
+        if (bridgeState != null && bridgeState.sink != null) {
+            if (output != null && !output.isEmpty()) {
+                bridgeState.sink.write(output);
+            }
+            return;
+        }
         if (session != null) {
             String prompt = getPrompt(session);
             if (output != null && !output.isEmpty()) {

@@ -61,23 +61,47 @@ public class KonsoleAppsDialog extends Dialog {
         this.mListener = listener;
     }
 
+    private TextView mCountView;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         if (getWindow() != null) {
-            getWindow().setBackgroundDrawable(new ColorDrawable(Color.parseColor("#EE0A0F14")));
+            getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             getWindow().setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
         }
 
         View rootView = LayoutInflater.from(mContext).inflate(R.layout.dialog_konsole_apps, null, false);
         setContentView(rootView);
 
+        View card = rootView.findViewById(R.id.konsole_apps_card);
+        if (card != null) {
+            int maxPx = Math.round(680 * mContext.getResources().getDisplayMetrics().density);
+            int availPx = mContext.getResources().getDisplayMetrics().widthPixels - Math.round(32 * mContext.getResources().getDisplayMetrics().density);
+            ViewGroup.LayoutParams lp = card.getLayoutParams();
+            if (lp != null && availPx > maxPx) {
+                lp.width = maxPx;
+                card.setLayoutParams(lp);
+            }
+        }
+
+        mCountView = rootView.findViewById(R.id.konsole_app_count);
+        View closeBtn = rootView.findViewById(R.id.konsole_app_close);
+        if (closeBtn != null) {
+            closeBtn.setOnClickListener(v -> dismiss());
+        }
+
         EditText searchBox = rootView.findViewById(R.id.konsole_app_search);
         GridView gridView = rootView.findViewById(R.id.konsole_app_grid);
+        int widthDp = mContext.getResources().getConfiguration().screenWidthDp;
+        int columns = widthDp >= 840 ? 6 : (widthDp >= 600 ? 5 : 3);
+        if (widthDp >= 410 && widthDp < 600) columns = 4;
+        gridView.setNumColumns(columns);
 
         loadInstalledApps();
+        updateCountSubtitle("");
 
         mAdapter = new AppAdapter();
         gridView.setAdapter(mAdapter);
@@ -134,8 +158,19 @@ public class KonsoleAppsDialog extends Dialog {
                 }
             }
         }
+        updateCountSubtitle(query);
         if (mAdapter != null) {
             mAdapter.notifyDataSetChanged();
+        }
+    }
+
+    private void updateCountSubtitle(String query) {
+        if (mCountView == null) return;
+        int count = mFilteredApps.size();
+        if (query == null || query.trim().isEmpty()) {
+            mCountView.setText(count + " launchable applications");
+        } else {
+            mCountView.setText(count + (count == 1 ? " match" : " matches"));
         }
     }
 
