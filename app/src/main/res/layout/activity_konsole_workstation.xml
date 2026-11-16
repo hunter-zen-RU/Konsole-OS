@@ -1,0 +1,767 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/workstation_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#080C10"
+    android:orientation="vertical">
+
+    <!-- Top Header Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="60dp"
+        android:background="#0D1117"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="8dp">
+
+        <ImageButton
+            android:id="@+id/workstation_back_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back to terminal"
+            android:padding="12dp"
+            android:src="@drawable/ic_back_arrow"
+            app:tint="#E6EDF3" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="PRO WORKSTATION HUB"
+                android:textColor="#00E5FF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/workstation_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:maxLines="1"
+                android:text="Rootless Proot · PCAP · RF · OTG · Vault"
+                android:textColor="#8B949E"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/workstation_panic_header_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_dashboard_chip"
+            android:contentDescription="Panic Lockdown"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:minWidth="72dp"
+            android:paddingHorizontal="14dp"
+            android:text="PANIC"
+            android:textColor="#FF5252"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1F2D3D" />
+
+    <ScrollView
+        android:id="@+id/workstation_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:id="@+id/workstation_content_column"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- LIVE CONSOLE OUTPUT PANEL -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="DIAGNOSTIC CONSOLE OUTPUT"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/workstation_output_log"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:minLines="4"
+                        android:maxLines="16"
+                        android:scrollbars="vertical"
+                        android:text="Workstation ready. Run any diagnostic module below."
+                        android:textColor="#00FF88"
+                        android:textIsSelectable="true"
+                        android:textSize="11.5sp" />
+                </LinearLayout>
+
+                <!-- SECTION 1: WORKSPACE PROFILES & INCOGNITO -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="WORKSPACE PROFILES &amp; EPHEMERAL SHELL"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/workstation_profile_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="Active profile: default"
+                        android:textColor="#00E5FF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_profile_default"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Switch to default workspace profile"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="DEFAULT"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_profile_lab"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Switch to lab workspace profile"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="LAB"
+                            android:textColor="#FF5252"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_profile_stealth"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Switch to stealth workspace profile"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="STEALTH"
+                            android:textColor="#9FB0C3"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_incognito_shell"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1.2"
+                            android:background="@drawable/bg_hud_chip_purple"
+                            android:contentDescription="Start ephemeral incognito shell session"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="INCOGNITO"
+                            android:textColor="#D2A8FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- SECTION 2: PROOT DISTROS, KEX DESKTOP & DAEMONS -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="ROOTLESS PROOT DISTROS, KEX VNC &amp; DAEMONS"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/workstation_distro_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="Installed rootfs: checking..."
+                        android:textColor="#9FB0C3"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/workstation_distro_input"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_terminal_input"
+                        android:fontFamily="monospace"
+                        android:hint="Distro (e.g. debian, kali-nethunter, ubuntu)"
+                        android:inputType="textNoSuggestions"
+                        android:paddingHorizontal="12dp"
+                        android:text="debian"
+                        android:textColor="#E6EDF3"
+                        android:textColorHint="#6E7681"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_distro_install"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Install selected proot distro in terminal"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="INSTALL"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_distro_login"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Login to selected proot distro"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="LOGIN"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_kex_start"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Start KeX VNC Server :1"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="KEX START"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_kex_vnc"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Open local VNC viewer URI"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="VNC VIEW"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginVertical="10dp"
+                        android:background="#1A2431" />
+
+                    <LinearLayout
+                        android:id="@+id/workstation_daemons_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_adb_status"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Check Wireless ADB Bridge status"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="WIRELESS ADB"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_dev_settings"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Open Android Developer Options"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="DEV OPTIONS"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- SECTION 3: ROOTLESS PCAP & NETWORK / RF RECON -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="ROOTLESS PCAP &amp; NETWORK / RF DIAGNOSTICS"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/workstation_pcap_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="PCAP Sniffer: IDLE · 0 packets"
+                        android:textColor="#FFD166"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_pcap_toggle"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_hud_chip_cyan"
+                            android:contentDescription="Start or stop rootless PCAP capture"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="START PCAP"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_pcap_list"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="List saved pcap files"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="CAPTURES"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <EditText
+                        android:id="@+id/workstation_target_host"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_terminal_input"
+                        android:fontFamily="monospace"
+                        android:hint="Target host (e.g. 127.0.0.1 or example.com)"
+                        android:inputType="textUri"
+                        android:paddingHorizontal="12dp"
+                        android:text="127.0.0.1"
+                        android:textColor="#E6EDF3"
+                        android:textColorHint="#6E7681"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/workstation_target_ports"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_terminal_input"
+                        android:fontFamily="monospace"
+                        android:hint="Ports (e.g. 22,80,443,5555,5901,8022,8080)"
+                        android:inputType="text"
+                        android:paddingHorizontal="12dp"
+                        android:text="22,80,443,5555,5901,8022,8080"
+                        android:textColor="#E6EDF3"
+                        android:textColorHint="#6E7681"
+                        android:textSize="12.5sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_net_ifaces"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Show network interfaces and ARP neighbors"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="ARP / IFACE"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_net_scan"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Scan TCP ports on target host"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="PORT SCAN"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_net_tls"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Inspect TLS certificate on port 443"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="TLS CERT"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_net_wifi"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Scan Wi-Fi BSSIDs"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="WI-FI BSS"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_net_ble"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Scan Bluetooth Low Energy GATT devices"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="BLE GATT"
+                            android:textColor="#D2A8FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_net_mdns"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Discover local mDNS NSD services"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="mDNS NSD"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- SECTION 4: USB OTG SERIAL & KEYSTORE VAULT -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.08"
+                    android:text="USB-OTG SERIAL &amp; KEYSTORE VAULT"
+                    android:textColor="#8B949E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_dashboard_card"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <EditText
+                        android:id="@+id/workstation_usb_payload"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_terminal_input"
+                        android:fontFamily="monospace"
+                        android:hint="UART command (e.g. AT or help)"
+                        android:inputType="text"
+                        android:paddingHorizontal="12dp"
+                        android:text="AT"
+                        android:textColor="#E6EDF3"
+                        android:textColorHint="#6E7681"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_usb_list"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Enumerate USB OTG devices"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="USB LIST"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_usb_uart"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Send UART command over USB serial"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="UART SEND 115200"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginVertical="10dp"
+                        android:background="#1A2431" />
+
+                    <TextView
+                        android:id="@+id/workstation_vault_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="Vault: UNLOCKED"
+                        android:textColor="#00FF88"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/workstation_vault_key"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_terminal_input"
+                            android:fontFamily="monospace"
+                            android:hint="Secret key (or pass)"
+                            android:inputType="textNoSuggestions"
+                            android:paddingHorizontal="10dp"
+                            android:textColor="#E6EDF3"
+                            android:textColorHint="#6E7681"
+                            android:textSize="12.5sp" />
+
+                        <EditText
+                            android:id="@+id/workstation_vault_val"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_terminal_input"
+                            android:fontFamily="monospace"
+                            android:hint="Secret value"
+                            android:inputType="textPassword"
+                            android:paddingHorizontal="10dp"
+                            android:textColor="#E6EDF3"
+                            android:textColorHint="#6E7681"
+                            android:textSize="12.5sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btn_vault_put"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Store encrypted secret in AndroidKeyStore vault"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="SAVE"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_vault_ls"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="List stored secret keys"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="KEYS"
+                            android:textColor="#00FF88"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btn_vault_lock"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_dashboard_chip"
+                            android:contentDescription="Lock or unlock vault"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:text="LOCK/UNLOCK"
+                            android:textColor="#FFD166"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

@@ -763,10 +763,9 @@ public final class TermuxInstaller {
         fishConf.append("end\n\n");
 
         String[] hardwareAndOsCmds = new String[]{
-            "bluetooth", "bt", "wifi", "music", "media", "call",
-            "contact", "contacts", "volume", "vol", "calc",
-            "flash", "flashlight", "vibrate", "beep", "brightness",
-            "dnd", "wallpaper", "lock", "battery", "launch",
+            "bluetooth", "bt", "wifi", "volume", "vol", "calc",
+            "flash", "flashlight", "vibrate", "brightness",
+            "dnd", "lock", "battery", "launch",
             "uninstall", "settings"
         };
         for (String cmd : hardwareAndOsCmds) {
@@ -809,18 +808,26 @@ public final class TermuxInstaller {
         String konsCompletions =
             "# Konsole OS Fish completions\n" +
             "complete -c kons -f\n" +
-            "complete -c kons -n '__fish_use_subcommand' -a 'dashboard dash macro macrolab setup-fish fish apps palette search install run remove list sys hud set notify toast alias update version about help switch'\n" +
+            "complete -c kons -n '__fish_use_subcommand' -a 'workstation distro kex daemon adb net pcap usb profile vault incognito dashboard dash plugins plugin shade customize reload macro macrolab setup-fish fish apps palette search install run remove list sys hud set notify toast alias update version about help switch'\n" +
             "complete -c kons -n '__fish_seen_subcommand_from switch' -a 'konsole termux'\n" +
             "complete -c kons -n '__fish_seen_subcommand_from hud' -a 'on off'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from distro proot' -a 'list install login'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from kex vnc' -a 'status install start stop connect'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from daemon service' -a 'list start stop'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from adb' -a 'status pair connect shell settings'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from net' -a 'ifaces arp scan tls wifi ble mdns'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from pcap' -a 'status start stop list'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from usb' -a 'list send'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from profile' -a 'list set default lab stealth'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from vault' -a 'status set-pass lock unlock put get ls del panic'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from plugin plugins' -a 'list launch templates install remove enable disable'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from shade' -a 'open close set unset status'\n" +
+            "complete -c kons -n '__fish_seen_subcommand_from customize' -a 'reload list set reset'\n" +
             "complete -c macro -f -n '__fish_use_subcommand' -a 'lab list status trigger enable disable notify toast flash vibrate launch tap swipe help'\n" +
             "complete -c auto-trigger -f -n '__fish_use_subcommand' -a 'lab list status trigger enable disable notify toast flash vibrate launch tap swipe help'\n" +
             "complete -c bluetooth -f -a 'status on off ls connect'\n" +
             "complete -c bt -f -a 'status on off ls connect'\n" +
             "complete -c wifi -f -a 'status on off ls connect'\n" +
-            "complete -c music -f -a 'play pause stop ls'\n" +
-            "complete -c media -f -a 'play pause stop ls'\n" +
-            "complete -c contact -f -a 'ls search'\n" +
-            "complete -c contacts -f -a 'ls search'\n" +
             "complete -c volume -f -a 'media ringer alarm notification silent vibrate normal'\n" +
             "complete -c vol -f -a 'media ringer alarm notification silent vibrate normal'\n" +
             "complete -c flash -f -a 'on off'\n" +
@@ -828,7 +835,7 @@ public final class TermuxInstaller {
             "complete -c brightness -f -a '25 50 80 100 auto'\n" +
             "complete -c dnd -f -a 'on off'\n" +
             "complete -c settings -f -a 'wifi bluetooth apps display sound security storage'\n" +
-            "complete -c lock -f -a '--sudo --sudo-set --sudo-reset --sudo-redo'\n";
+            "complete -c lock -f -a '--pass --pass-set --sudo --panic --unlock --sudo-redo'\n";
         writeUtf8FileSafely(new File(prefixDir, "etc/fish/completions/kons.fish"), konsCompletions);
 
         // 5. Optional user ~/.config/fish/config.fish (only create if missing; never overwrite user customization)

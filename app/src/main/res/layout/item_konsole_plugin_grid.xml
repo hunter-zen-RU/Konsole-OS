@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="104dp"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="10dp"
+    android:background="@drawable/bg_app_grid_tile">
+
+    <ImageView
+        android:id="@+id/konsole_plugin_icon"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:scaleType="centerCrop"
+        android:contentDescription="Plugin Icon" />
+
+    <TextView
+        android:id="@+id/konsole_plugin_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:layout_marginTop="7dp"
+        android:fontFamily="monospace"
+        android:textColor="#E6EDF3"
+        android:textSize="11.5sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/konsole_plugin_meta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:layout_marginTop="2dp"
+        android:fontFamily="monospace"
+        android:textColor="#00E5FF"
+        android:textSize="9.5sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+</LinearLayout>

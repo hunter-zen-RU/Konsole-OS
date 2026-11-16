@@ -2,9 +2,12 @@ package com.termux.app.konsole;
 
 import android.content.Intent;
 import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ImageButton;
@@ -62,6 +65,7 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
     private SwitchCompat mSwitchKeepScreenOn;
     private SwitchCompat mSwitchSoftKeyboard;
     private SwitchCompat mSwitchMarginAdjust;
+    private SwitchCompat mSwitchReplaceShade;
     private TextView mFontValue;
 
     private LinearLayout mPathsContainer;
@@ -130,6 +134,7 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
         mSwitchKeepScreenOn = findViewById(R.id.switch_keep_screen_on);
         mSwitchSoftKeyboard = findViewById(R.id.switch_soft_keyboard);
         mSwitchMarginAdjust = findViewById(R.id.switch_margin_adjust);
+        mSwitchReplaceShade = findViewById(R.id.switch_replace_shade);
         mFontValue = findViewById(R.id.dashboard_font_value);
 
         mPathsContainer = findViewById(R.id.dashboard_paths_container);
@@ -147,6 +152,11 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
             openSettingsBtn.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
         }
 
+        View openWorkstationBtn = findViewById(R.id.dashboard_open_workstation);
+        if (openWorkstationBtn != null) {
+            openWorkstationBtn.setOnClickListener(v -> startActivity(new Intent(this, KonsoleWorkstationActivity.class)));
+        }
+
         View openMacroLabBtn = findViewById(R.id.dashboard_open_macro_lab);
         if (openMacroLabBtn != null) {
             openMacroLabBtn.setOnClickListener(v -> startActivity(new Intent(this, KonsoleMacroLabActivity.class)));
@@ -155,6 +165,48 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
         View openAppsBtn = findViewById(R.id.dashboard_open_apps);
         if (openAppsBtn != null) {
             openAppsBtn.setOnClickListener(v -> new KonsoleAppsDialog(this, null).show());
+        }
+
+        View openPluginsBtn = findViewById(R.id.dashboard_open_plugins);
+        if (openPluginsBtn != null) {
+            openPluginsBtn.setOnClickListener(v ->
+                new KonsolePluginsDialog(this, null, KonsolePluginsDialog.MODE_LAUNCHABLE).show());
+        }
+
+        View openTemplatesBtn = findViewById(R.id.dashboard_open_templates);
+        if (openTemplatesBtn != null) {
+            openTemplatesBtn.setOnClickListener(v ->
+                new KonsolePluginsDialog(this, null, KonsolePluginsDialog.MODE_TEMPLATES).show());
+        }
+
+        View reloadXmlBtn = findViewById(R.id.dashboard_reload_xml);
+        if (reloadXmlBtn != null) {
+            reloadXmlBtn.setOnClickListener(v -> {
+                KonsoleConfigManager.getInstance().loadAllConfigurations();
+                KonsoleFishBridge.syncStateFiles(this);
+                TermuxActivity.updateTermuxActivityStyling(this, false);
+                KonsoleShadeService.startIfEnabled(this);
+                loadToggleStates();
+                Toast.makeText(this, "Reloaded $konsole/customize/*.xml", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        View openShadeBtn = findViewById(R.id.dashboard_open_shade_btn);
+        if (openShadeBtn != null) {
+            openShadeBtn.setOnClickListener(v -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                    KonsoleShadeService.showGlobalShade(this);
+                } else {
+                    KonsoleConfigManager.getInstance().setShadeProperty("enabled", "true");
+                    TermuxActivity tc = (TermuxActivity) KonsoleFishBridge.getInstance().getUiContext(this);
+                    if (tc != null) {
+                        tc.openCustomShade();
+                        finish();
+                    } else {
+                        Toast.makeText(this, "Grant Draw Over Apps permission or swipe down in Terminal", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
         }
 
         View repairAptBtn = findViewById(R.id.dashboard_repair_apt_btn);
@@ -212,6 +264,30 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
             TermuxActivity.updateTermuxActivityStyling(this, false);
         });
 
+        if (mSwitchReplaceShade != null) {
+            mSwitchReplaceShade.setOnCheckedChangeListener((btn, isChecked) -> {
+                if (mUpdatingToggles) return;
+                KonsoleConfigManager.getInstance().setShadeProperty("enabled", "true");
+                KonsoleConfigManager.getInstance().setShadeProperty("replaceSystemShade", String.valueOf(isChecked));
+                if (isChecked) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                        Toast.makeText(this, "Grant 'Display over other apps' permission to replace system shade", Toast.LENGTH_LONG).show();
+                        try {
+                            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName())));
+                        } catch (Exception ignored) {
+                        }
+                    } else {
+                        KonsoleShadeService.startIfEnabled(this);
+                        Toast.makeText(this, "Konsole Replacement Shade enabled", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    KonsoleShadeService.stopService(this);
+                    Toast.makeText(this, "Konsole Replacement Shade disabled", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
         View fontDec = findViewById(R.id.dashboard_font_dec);
         if (fontDec != null) {
             fontDec.setOnClickListener(v -> adjustFontSize(false));
@@ -239,6 +315,9 @@ public class KonsoleDashboardActivity extends AppCompatActivity {
             updateModeDescription(konsoleMode);
 
             mSwitchHudVisible.setChecked(cfg.isStatusBarVisible());
+            if (mSwitchReplaceShade != null) {
+                mSwitchReplaceShade.setChecked(cfg.getShadeBoolean("replaceSystemShade", false));
+            }
 
             boolean hasPrefs = mPreferences != null;
             mSwitchExtraKeys.setEnabled(hasPrefs);

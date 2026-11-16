@@ -675,6 +675,65 @@
                                 android:textStyle="bold" />
                         </LinearLayout>
                     </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginVertical="4dp"
+                        android:background="#1A2431" />
+
+                    <!-- Custom Replacement Shade Switch & Open Button -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="52dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingEnd="8dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Custom Replacement Shade"
+                                android:textColor="#E6EDF3"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Set Konsole Shade as global overlay ($konsole/customize/shade.xml)"
+                                android:textColor="#8B949E"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/dashboard_open_shade_btn"
+                            android:layout_width="wrap_content"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="8dp"
+                            android:background="@drawable/bg_hud_chip_cyan"
+                            android:contentDescription="Open Konsole Custom Shade"
+                            android:fontFamily="monospace"
+                            android:gravity="center"
+                            android:paddingHorizontal="10dp"
+                            android:text="OPEN"
+                            android:textColor="#00E5FF"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/switch_replace_shade"
+                            android:layout_width="wrap_content"
+                            android:layout_height="48dp"
+                            android:contentDescription="Set Konsole Shade as system replacement shade" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <!-- SECTION 3: SYSTEM PATHS & APT SETUP -->
@@ -720,11 +779,26 @@
                     android:orientation="vertical"
                     android:padding="14dp" />
 
+                <!-- PRO WORKSTATION HUB BANNER -->
+                <TextView
+                    android:id="@+id/dashboard_open_workstation"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/bg_hud_chip_cyan"
+                    android:contentDescription="Open Konsole Pro Workstation Hub"
+                    android:fontFamily="monospace"
+                    android:gravity="center"
+                    android:text="PRO WORKSTATION HUB (PROOT · PCAP · RECON · USB · VAULT)"
+                    android:textColor="#00E5FF"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
                 <!-- QUICK ACTIONS FOOTER -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="8dp"
                     android:orientation="horizontal">
 
                     <TextView
@@ -768,6 +842,58 @@
                         android:gravity="center"
                         android:text="SETTINGS"
                         android:textColor="#FFD166"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- QUICK ACTIONS FOOTER ROW 2: PLUGINS & XML -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/dashboard_open_plugins"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_hud_chip_purple"
+                        android:contentDescription="Open Launchable Plugins"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:text="PLUGINS"
+                        android:textColor="#D2A8FF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/dashboard_open_templates"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_dashboard_chip"
+                        android:contentDescription="Browse GitHub Plugin Templates"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:text="TEMPLATES"
+                        android:textColor="#00E5FF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/dashboard_reload_xml"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_dashboard_chip"
+                        android:contentDescription="Reload XML Customization"
+                        android:fontFamily="monospace"
+                        android:gravity="center"
+                        android:text="RELOAD XML"
+                        android:textColor="#00FF88"
                         android:textSize="12sp"
                         android:textStyle="bold" />
                 </LinearLayout>

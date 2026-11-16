@@ -112,7 +112,7 @@ No separate formatter or linter task is configured in the root build. Android li
 | `minSdkVersion` / `targetSdkVersion` | Supported/minimum and target API | `21` / `28` |
 | `ndkVersion` | Native build toolchain | `29.0.14206865` |
 | `TERMUX_PACKAGE_VARIANT` | Bootstrap variant | `apt-android-7`; also supports `apt-android-5` |
-| `TERMUX_APP_VERSION_NAME` | Override app version name | `app/build.gradle` default `1.0.0-cabeli` |
+| `TERMUX_APP_VERSION_NAME` | Override app version name | `app/build.gradle` default `1.0.0-premier` |
 | `TERMUX_APK_VERSION_TAG` | APK version tag input | Optional |
 | `TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS` / `TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS` | Split APK build controls | `1` / `0` |
 | `JITPACK_NDK_VERSION` | NDK override in library/JitPack builds | Falls back to project property |

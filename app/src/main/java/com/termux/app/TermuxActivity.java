@@ -158,6 +158,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      */
     private boolean mIsVisible;
     private boolean mKonsoleSharedStorageInitialized;
+    private com.termux.app.konsole.KonsoleShadeController mShadeController;
+    private android.widget.FrameLayout mShadeHost;
+    private float mShadeSwipeStartX;
+    private float mShadeSwipeStartY;
+    private boolean mShadeSwipeTracking;
 
     /**
      * If onResume() was called after onCreate().
@@ -396,6 +401,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         com.termux.app.konsole.KonsoleFishBridge.getInstance().setActiveActivity(this);
         initializeKonsoleSharedStorageIfGranted();
+        applyKonsoleXmlCustomization(false);
+        com.termux.app.konsole.KonsoleShadeService.startIfEnabled(this);
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();
@@ -730,8 +737,22 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     @SuppressLint("RtlHardcoded")
     @Override
     public void onBackPressed() {
+        if (isCustomShadeOpen()) {
+            closeCustomShade();
+            return;
+        }
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
             getDrawer().closeDrawers();
+            return;
+        }
+        String backAction = com.termux.app.konsole.KonsoleConfigManager.getInstance()
+            .getExperienceProperty("backButtonAction", "newline_in_konsole");
+        if ("open_shade".equalsIgnoreCase(backAction)) {
+            openCustomShade();
+        } else if ("command_palette".equalsIgnoreCase(backAction)) {
+            showCommandPaletteDialog();
+        } else if ("close_app".equalsIgnoreCase(backAction)) {
+            finishActivityIfNotFinishing();
         } else if ("konsole".equalsIgnoreCase(com.termux.app.konsole.KonsoleConfigManager.getInstance().getMode())) {
             TerminalSession session = getCurrentSession();
             if (session != null) {
@@ -760,8 +781,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mHudHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         mHudModeView = findViewById(R.id.konsole_hud_mode);
         mHudTelemetryView = findViewById(R.id.konsole_hud_telemetry);
+        mShadeHost = findViewById(R.id.konsole_shade_host);
+        View hudBar = findViewById(R.id.konsole_hud_bar);
         View dashboardBtn = findViewById(R.id.konsole_hud_dashboard);
         View appsBtn = findViewById(R.id.konsole_hud_apps);
+        View pluginsBtn = findViewById(R.id.konsole_hud_plugins);
         View paletteBtn = findViewById(R.id.konsole_hud_palette);
 
         if (mHudModeView != null) {
@@ -781,6 +805,18 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
         if (mHudTelemetryView != null) {
             mHudTelemetryView.setOnClickListener(v -> openDashboardActivity());
+            mHudTelemetryView.setOnLongClickListener(v -> {
+                handleExperienceAction(com.termux.app.konsole.KonsoleConfigManager.getInstance()
+                    .getExperienceProperty("longPressHudAction", "open_shade"));
+                return true;
+            });
+        }
+        if (hudBar != null) {
+            hudBar.setOnLongClickListener(v -> {
+                handleExperienceAction(com.termux.app.konsole.KonsoleConfigManager.getInstance()
+                    .getExperienceProperty("longPressHudAction", "open_shade"));
+                return true;
+            });
         }
         if (dashboardBtn != null) {
             dashboardBtn.setOnClickListener(v -> openDashboardActivity());
@@ -795,11 +831,274 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 }).show();
             });
         }
+        if (pluginsBtn != null) {
+            pluginsBtn.setOnClickListener(v -> showPluginsLauncherDialog());
+        }
         if (paletteBtn != null) {
             paletteBtn.setOnClickListener(v -> showCommandPaletteDialog());
         }
         refreshKonsoleHudVisibility();
+        applyKonsoleXmlCustomization(false);
         updateKonsoleHudContent();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (!isCustomShadeOpen() && ev != null) {
+            com.termux.app.konsole.KonsoleConfigManager cfg = com.termux.app.konsole.KonsoleConfigManager.getInstance();
+            if (cfg.getShadeBoolean("enabled", true) && cfg.getShadeBoolean("swipeDownToOpen", true)) {
+                int action = ev.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN) {
+                    int triggerDp = cfg.getShadeInt("triggerHeightDp", 22, 10, 64);
+                    float density = getResources().getDisplayMetrics().density;
+                    float zonePx = Math.max(triggerDp * density, 52f * density);
+                    View hudBar = findViewById(R.id.konsole_hud_bar);
+                    if (hudBar != null && hudBar.getVisibility() == View.VISIBLE && hudBar.getTop() < zonePx * 2f) {
+                        zonePx = Math.max(zonePx, hudBar.getBottom());
+                    }
+                    mShadeSwipeTracking = ev.getY() <= zonePx;
+                    mShadeSwipeStartX = ev.getX();
+                    mShadeSwipeStartY = ev.getY();
+                } else if (action == android.view.MotionEvent.ACTION_MOVE && mShadeSwipeTracking) {
+                    float dy = ev.getY() - mShadeSwipeStartY;
+                    float dx = Math.abs(ev.getX() - mShadeSwipeStartX);
+                    float threshold = 28f * getResources().getDisplayMetrics().density;
+                    if (dy > threshold && dy > dx * 1.3f) {
+                        mShadeSwipeTracking = false;
+                        openCustomShade();
+                        return true;
+                    }
+                } else if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                    mShadeSwipeTracking = false;
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    public boolean isCustomShadeOpen() {
+        return mShadeHost != null && mShadeHost.getVisibility() == View.VISIBLE;
+    }
+
+    public void openCustomShade() {
+        if (mShadeHost == null) {
+            mShadeHost = findViewById(R.id.konsole_shade_host);
+        }
+        if (mShadeHost == null) return;
+        if (mShadeController == null) {
+            mShadeController = new com.termux.app.konsole.KonsoleShadeController(this, this::closeCustomShade);
+            View shadeView = mShadeController.getOrCreateView(mShadeHost);
+            mShadeHost.removeAllViews();
+            mShadeHost.addView(shadeView);
+        }
+        mShadeHost.setVisibility(View.VISIBLE);
+        mShadeHost.bringToFront();
+        mShadeController.onOpen();
+    }
+
+    public void closeCustomShade() {
+        if (mShadeController != null) {
+            mShadeController.onClose();
+        }
+        if (mShadeHost != null) {
+            mShadeHost.setVisibility(View.GONE);
+        }
+    }
+
+    public void showPluginsLauncherDialog() {
+        new com.termux.app.konsole.KonsolePluginsDialog(
+            this,
+            getCurrentSession(),
+            com.termux.app.konsole.KonsolePluginsDialog.MODE_LAUNCHABLE
+        ).show();
+    }
+
+    public void startIncognitoSession() {
+        if (mTermuxTerminalSessionActivityClient == null) return;
+        java.io.File incDir = new java.io.File(getCacheDir(), "konsole_incognito/" + System.currentTimeMillis());
+        if (!incDir.exists()) incDir.mkdirs();
+        mTermuxTerminalSessionActivityClient.addNewSession(false, "Incognito");
+        TerminalSession s = getCurrentSession();
+        if (s != null) {
+            String cmd = "\u0015export HOME=\"" + incDir.getAbsolutePath() + "\" HISTFILE=/dev/null KONSOLE_INCOGNITO=1; cd \"$HOME\"; clear\n";
+            byte[] b = cmd.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            s.write(b, 0, b.length);
+            showToast("Ephemeral Incognito shell active (HISTFILE=/dev/null)", false);
+        }
+    }
+
+    public boolean isExternalDisplayOrDesktop() {
+        int displayId = android.view.Display.DEFAULT_DISPLAY;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && getDisplay() != null) {
+            displayId = getDisplay().getDisplayId();
+        } else if (getWindowManager() != null && getWindowManager().getDefaultDisplay() != null) {
+            displayId = getWindowManager().getDefaultDisplay().getDisplayId();
+        }
+        android.content.res.Configuration c = getResources().getConfiguration();
+        boolean wideHwKb = c.screenWidthDp >= 840 && c.keyboard == android.content.res.Configuration.KEYBOARD_QWERTY;
+        return displayId != android.view.Display.DEFAULT_DISPLAY || wideHwKb;
+    }
+
+    public void handleExperienceAction(String action) {
+        if (action == null) return;
+        switch (action.trim().toLowerCase()) {
+            case "open_shade":
+                openCustomShade();
+                break;
+            case "command_palette":
+                showCommandPaletteDialog();
+                break;
+            case "apps_drawer":
+                new com.termux.app.konsole.KonsoleAppsDialog(this, null).show();
+                break;
+            case "plugins_launcher":
+                showPluginsLauncherDialog();
+                break;
+            case "extra_keys":
+                toggleTerminalToolbar();
+                break;
+            case "dashboard":
+                openDashboardActivity();
+                break;
+            default:
+                break;
+        }
+    }
+
+    public void applyKonsoleXmlCustomization(boolean fromReload) {
+        com.termux.app.konsole.KonsoleConfigManager cfg = com.termux.app.konsole.KonsoleConfigManager.getInstance();
+        if (fromReload) {
+            cfg.loadAllConfigurations();
+        }
+
+        int rootBg = cfg.getUiColor("backgroundColor", 0xFF0B0F14);
+        int termBg = cfg.getUiColor("terminalBackgroundColor", 0xFF000000);
+        int surfaceColor = cfg.getUiColor("surfaceColor", 0xFF0B0F14);
+
+        if (mTermuxActivityRootView != null) {
+            mTermuxActivityRootView.setBackgroundColor(rootBg);
+        }
+        View rootRel = findViewById(R.id.activity_termux_root_relative_layout);
+        if (rootRel != null) {
+            rootRel.setBackgroundColor(termBg);
+        }
+        boolean desktopMode = cfg.getDesktopBoolean("desktopAutoSwitch", true) && isExternalDisplayOrDesktop();
+
+        View leftDrawer = findViewById(R.id.left_drawer);
+        if (leftDrawer != null) {
+            leftDrawer.setBackgroundColor(surfaceColor);
+            int baseDrawerDp = cfg.getUiInt("drawerWidthDp", 268, 200, 420);
+            int drawerDp = desktopMode ? cfg.getDesktopInt("drawerWidthDp", baseDrawerDp, 200, 480) : baseDrawerDp;
+            ViewGroup.LayoutParams dlp = leftDrawer.getLayoutParams();
+            if (dlp != null) {
+                int targetW = Math.round(drawerDp * getResources().getDisplayMetrics().density);
+                if (dlp.width != targetW) {
+                    dlp.width = targetW;
+                    leftDrawer.setLayoutParams(dlp);
+                }
+            }
+        }
+
+        float transparency = cfg.getUiFloat("transparency", 1.0f, 0.35f, 1.0f);
+        if (mTerminalView != null) {
+            mTerminalView.setAlpha(transparency);
+        }
+
+        refreshKonsoleHudVisibility();
+        applyHudPositionAndChips(cfg);
+
+        if (cfg.getUiBoolean("fullscreen", mProperties != null && mProperties.isUsingFullScreen())) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        } else if (fromReload) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+
+        if ((fromReload || desktopMode) && mPreferences != null) {
+            int baseFont = cfg.getUiInt("fontSize", -1, 6, 48);
+            int xmlFont = desktopMode ? cfg.getDesktopInt("fontSize", baseFont, 6, 48) : baseFont;
+            if (xmlFont > 0 && mTerminalView != null) {
+                mTerminalView.setTextSize(xmlFont);
+            }
+            boolean baseExtra = cfg.getUiBoolean("extraKeysVisible", mPreferences.shouldShowTerminalToolbar());
+            boolean extraVisible = desktopMode ? cfg.getDesktopBoolean("extraKeysVisible", baseExtra) : baseExtra;
+            mPreferences.setShowTerminalToolbar(extraVisible);
+            ViewPager pager = getTerminalToolbarViewPager();
+            if (pager != null) {
+                pager.setVisibility(extraVisible ? View.VISIBLE : View.GONE);
+            }
+        }
+
+        boolean keepAwake = cfg.getExperienceBoolean("keepScreenOn",
+            mPreferences != null && mPreferences.shouldKeepScreenOn());
+        if (mTerminalView != null) {
+            mTerminalView.setKeepScreenOn(keepAwake);
+        }
+
+        if (mTermuxTerminalSessionActivityClient != null) {
+            mTermuxTerminalSessionActivityClient.checkForFontAndColors();
+        }
+        if (mShadeController != null) {
+            mShadeController.applyXmlStyling();
+        }
+    }
+
+    private void applyHudPositionAndChips(com.termux.app.konsole.KonsoleConfigManager cfg) {
+        View modeChip = findViewById(R.id.konsole_hud_mode);
+        View telChip = findViewById(R.id.konsole_hud_telemetry);
+        View dashChip = findViewById(R.id.konsole_hud_dashboard);
+        View appsChip = findViewById(R.id.konsole_hud_apps);
+        View plgChip = findViewById(R.id.konsole_hud_plugins);
+        View cmdChip = findViewById(R.id.konsole_hud_palette);
+
+        if (modeChip != null) modeChip.setVisibility(cfg.getUiBoolean("hudShowMode", true) ? View.VISIBLE : View.GONE);
+        if (telChip != null) telChip.setVisibility(cfg.getUiBoolean("hudShowTelemetry", true) ? View.VISIBLE : View.GONE);
+        if (dashChip != null) dashChip.setVisibility(cfg.getUiBoolean("hudShowDash", true) ? View.VISIBLE : View.GONE);
+        if (appsChip != null) appsChip.setVisibility(cfg.getUiBoolean("hudShowApps", true) ? View.VISIBLE : View.GONE);
+        if (plgChip != null) plgChip.setVisibility(cfg.getUiBoolean("hudShowPlugins", true) ? View.VISIBLE : View.GONE);
+        if (cmdChip != null) cmdChip.setVisibility(cfg.getUiBoolean("hudShowCmd", true) ? View.VISIBLE : View.GONE);
+
+        View hudBar = findViewById(R.id.konsole_hud_bar);
+        View drawer = findViewById(R.id.drawer_layout);
+        View toolbar = findViewById(R.id.terminal_toolbar_view_pager);
+        if (hudBar == null || drawer == null || toolbar == null) return;
+
+        boolean desktopMode = cfg.getDesktopBoolean("desktopAutoSwitch", true) && isExternalDisplayOrDesktop();
+        String hudPos = desktopMode
+                ? cfg.getDesktopProperty("hudPosition", cfg.getUiProperty("hudPosition", "top"))
+                : cfg.getUiProperty("hudPosition", "top");
+        boolean bottom = "bottom".equalsIgnoreCase(hudPos);
+        boolean hudVisible = hudBar.getVisibility() == View.VISIBLE;
+        boolean toolbarVisible = toolbar.getVisibility() == View.VISIBLE;
+
+        RelativeLayout.LayoutParams hudLp = (RelativeLayout.LayoutParams) hudBar.getLayoutParams();
+        RelativeLayout.LayoutParams drawerLp = (RelativeLayout.LayoutParams) drawer.getLayoutParams();
+        RelativeLayout.LayoutParams toolLp = (RelativeLayout.LayoutParams) toolbar.getLayoutParams();
+
+        if (bottom && hudVisible) {
+            hudLp.removeRule(RelativeLayout.ALIGN_PARENT_TOP);
+            hudLp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+
+            toolLp.removeRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            toolLp.addRule(RelativeLayout.ABOVE, R.id.konsole_hud_bar);
+
+            drawerLp.removeRule(RelativeLayout.BELOW);
+            drawerLp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            drawerLp.addRule(RelativeLayout.ABOVE, toolbarVisible ? R.id.terminal_toolbar_view_pager : R.id.konsole_hud_bar);
+        } else {
+            hudLp.removeRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            hudLp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+
+            toolLp.removeRule(RelativeLayout.ABOVE);
+            toolLp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+
+            drawerLp.removeRule(RelativeLayout.ALIGN_PARENT_TOP);
+            drawerLp.addRule(RelativeLayout.BELOW, R.id.konsole_hud_bar);
+            drawerLp.addRule(RelativeLayout.ABOVE, R.id.terminal_toolbar_view_pager);
+        }
+
+        hudBar.setLayoutParams(hudLp);
+        toolbar.setLayoutParams(toolLp);
+        drawer.setLayoutParams(drawerLp);
     }
 
     public void refreshKonsoleHudVisibility() {
@@ -807,6 +1106,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (hudBar == null) return;
         boolean visible = com.termux.app.konsole.KonsoleConfigManager.getInstance().isStatusBarVisible();
         hudBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+        applyHudPositionAndChips(com.termux.app.konsole.KonsoleConfigManager.getInstance());
     }
 
     private void startHudTicker() {
@@ -895,8 +1195,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private void requestKonsolePermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             List<String> perms = new ArrayList<>();
-            perms.add(android.Manifest.permission.READ_CONTACTS);
-            perms.add(android.Manifest.permission.CALL_PHONE);
             perms.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
             perms.add(android.Manifest.permission.CAMERA);
             perms.add(android.Manifest.permission.READ_EXTERNAL_STORAGE);
@@ -1114,6 +1412,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         com.termux.app.konsole.KonsoleConfigManager.getInstance().init(this);
         TermuxInstaller.setupStorageSymlinks(this);
         com.termux.app.konsole.KonsoleFishBridge.syncStateFiles(this);
+        applyKonsoleXmlCustomization(false);
+        com.termux.app.konsole.KonsoleShadeService.startIfEnabled(this);
         mKonsoleSharedStorageInitialized = new java.io.File(
             com.termux.app.konsole.KonsoleConfigManager.KONSOLE_ROOT_PATH).isDirectory();
     }

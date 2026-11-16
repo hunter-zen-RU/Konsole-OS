@@ -206,7 +206,8 @@ public final class KonsoleMacroExecutor {
                 shellPath = prefixSh.getAbsolutePath();
                 argv = new String[]{shellPath, "-c", envExports + command};
             } else {
-                shellPath = "/system/bin/sh";
+                File systemSh = new File("/system/bin/sh");
+                shellPath = (systemSh.isFile() && systemSh.canExecute()) ? "/system/bin/sh" : "/bin/sh";
                 argv = new String[]{shellPath, "-c", envExports + command};
             }
 
@@ -223,7 +224,7 @@ public final class KonsoleMacroExecutor {
             Map<String, String> env = pb.environment();
             env.put("HOME", TermuxConstants.TERMUX_HOME_DIR_PATH);
             env.put("PREFIX", TermuxConstants.TERMUX_PREFIX_DIR_PATH);
-            env.put("PATH", TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":/system/bin:/system/xbin");
+            env.put("PATH", TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":/system/bin:/system/xbin:/bin:/usr/bin");
             if (vars != null) {
                 for (Map.Entry<String, String> e : vars.entrySet()) {
                     if (isSafeIdentifier(e.getKey()) && e.getValue() != null) {

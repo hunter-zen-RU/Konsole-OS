@@ -46,6 +46,8 @@ public class KonsoleAutomationAccessibilityService extends AccessibilityService 
         super.onDestroy();
     }
 
+    private long mLastShadeInterceptMs = 0L;
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) return;
@@ -53,7 +55,29 @@ public class KonsoleAutomationAccessibilityService extends AccessibilityService 
             CharSequence pkgCs = event.getPackageName();
             if (pkgCs == null) return;
             String pkg = pkgCs.toString();
-            if (pkg.isEmpty() || pkg.equals(sLastForegroundPkg)) return;
+            if (pkg.isEmpty()) return;
+
+            // Optional custom shade replacement when user explicitly enabled replaceSystemShade
+            if ("com.android.systemui".equals(pkg)) {
+                CharSequence clsCs = event.getClassName();
+                String cls = clsCs != null ? clsCs.toString() : "";
+                if ((cls.contains("NotificationShade") || cls.contains("StatusBar"))
+                        && KonsoleConfigManager.getInstance().getShadeBoolean("replaceSystemShade", false)) {
+                    long now = System.currentTimeMillis();
+                    if (now - mLastShadeInterceptMs > 1200L) {
+                        mLastShadeInterceptMs = now;
+                        if (Build.VERSION.SDK_INT >= 31) {
+                            performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
+                        } else {
+                            performGlobalAction(GLOBAL_ACTION_BACK);
+                        }
+                        KonsoleShadeService.showGlobalShade(getApplicationContext());
+                        return;
+                    }
+                }
+            }
+
+            if (pkg.equals(sLastForegroundPkg)) return;
             sLastForegroundPkg = pkg;
 
             Map<String, String> extras = new HashMap<>();

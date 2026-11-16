@@ -595,8 +595,10 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             // Clear any previous flags to disable soft keyboard in case setting updated
             KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
 
-            // If soft keyboard is to be hidden on startup
-            if (isStartup && mActivity.getProperties().shouldSoftKeyboardBeHiddenOnStartup()) {
+            // If soft keyboard is to be hidden on startup or disabled via experience.xml
+            boolean autoOpenKeyboard = com.termux.app.konsole.KonsoleConfigManager.getInstance()
+                .getExperienceBoolean("autoOpenKeyboard", true);
+            if (isStartup && (mActivity.getProperties().shouldSoftKeyboardBeHiddenOnStartup() || !autoOpenKeyboard)) {
                 Logger.logVerbose(LOG_TAG, "Hiding soft keyboard on startup");
                 // Required to keep keyboard hidden when Termux app is switched back from another app
                 KeyboardUtils.setSoftKeyboardAlwaysHiddenFlags(mActivity);

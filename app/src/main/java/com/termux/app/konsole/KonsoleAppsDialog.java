@@ -96,8 +96,9 @@ public class KonsoleAppsDialog extends Dialog {
         EditText searchBox = rootView.findViewById(R.id.konsole_app_search);
         GridView gridView = rootView.findViewById(R.id.konsole_app_grid);
         int widthDp = mContext.getResources().getConfiguration().screenWidthDp;
-        int columns = widthDp >= 840 ? 6 : (widthDp >= 600 ? 5 : 3);
-        if (widthDp >= 410 && widthDp < 600) columns = 4;
+        int defaultColumns = widthDp >= 840 ? 6 : (widthDp >= 600 ? 5 : 3);
+        if (widthDp >= 410 && widthDp < 600) defaultColumns = 4;
+        int columns = KonsoleConfigManager.getInstance().getUiInt("gridColumns", defaultColumns, 2, 7);
         gridView.setNumColumns(columns);
 
         loadInstalledApps();

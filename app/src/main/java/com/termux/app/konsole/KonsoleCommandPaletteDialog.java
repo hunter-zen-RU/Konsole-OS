@@ -141,8 +141,31 @@ public class KonsoleCommandPaletteDialog extends Dialog {
     private void populateEntries() {
         mAllEntries.clear();
 
+        // NetHunter Rootless / Pro Workstation workflows
+        mAllEntries.add(new PaletteEntry("kons workstation", "PRO HUB", "Open Pro Workstation Hub (Distros, PCAP, Recon, USB, Vault)"));
+        mAllEntries.add(new PaletteEntry("kons pcap status", "PCAP", "Inspect rootless VpnService packet capture & .pcap files"));
+        mAllEntries.add(new PaletteEntry("kons net ifaces", "NET", "Inspect active network interfaces and /proc/net/arp neighbors"));
+        mAllEntries.add(new PaletteEntry("kons net scan 127.0.0.1", "NET", "TCP port & banner probe across target host"));
+        mAllEntries.add(new PaletteEntry("kons daemon list", "DAEMON", "Probe sshd(:8022), kex(:5901), tor(:9050), http(:8080), adb(:5555)"));
+        mAllEntries.add(new PaletteEntry("kons distro list", "PROOT", "List installed proot-distro Linux rootfs containers"));
+        mAllEntries.add(new PaletteEntry("kons kex start", "KEX", "Start rootless KeX TigerVNC desktop on :1 (5901)"));
+        mAllEntries.add(new PaletteEntry("kons adb status", "ADB", "Check rootless Wireless ADB bridge & pairing status"));
+        mAllEntries.add(new PaletteEntry("kons usb list", "USB-OTG", "Enumerate attached USB-OTG UART/serial peripherals"));
+        mAllEntries.add(new PaletteEntry("kons profile lab", "PROFILE", "Switch workspace to Lab Recon profile"));
+        mAllEntries.add(new PaletteEntry("kons incognito", "PRIVACY", "Launch ephemeral no-history shell workspace"));
+        mAllEntries.add(new PaletteEntry("kons vault status", "VAULT", "Inspect AndroidKeyStore AES-GCM vault status"));
+        mAllEntries.add(new PaletteEntry("lock --panic", "SECURITY", "Panic lockdown: lock vault, stop PCAP & wipe incognito cache"));
+
         // Core Konsole OS workflows
         mAllEntries.add(new PaletteEntry("kons dashboard", "DASHBOARD", "Open interactive system stats, paths & quick-toggle Dashboard"));
+        mAllEntries.add(new PaletteEntry("kons plugins", "PLUGINS", "Open Launchable Plugins Launcher grid ($konsole/plugins)"));
+        mAllEntries.add(new PaletteEntry("kons plugin templates", "PLUGINS", "Browse & install GitHub plugin templates (plugins.json)"));
+        mAllEntries.add(new PaletteEntry("kons plugin list", "PLUGINS", "List all installed launchable and extension plugins"));
+        mAllEntries.add(new PaletteEntry("kons shade open", "SHADE", "Open Konsole Custom Replacement Shade"));
+        mAllEntries.add(new PaletteEntry("kons shade set", "SHADE", "Enable global system replacement shade ($konsole/customize/shade.xml)"));
+        mAllEntries.add(new PaletteEntry("kons shade unset", "SHADE", "Disable global system replacement shade"));
+        mAllEntries.add(new PaletteEntry("kons reload", "CUSTOMIZE", "Reload XML configs ($konsole/customize/*.xml) & re-apply UI"));
+        mAllEntries.add(new PaletteEntry("kons customize list", "CUSTOMIZE", "Show all XML customization keys & values"));
         mAllEntries.add(new PaletteEntry("kons macro", "AUTOMATION", "Open visual UI Macro Lab (triggers, cron jobs & live tests)"));
         mAllEntries.add(new PaletteEntry("macro list", "AUTOMATION", "List configured automation macros and cron rules"));
         mAllEntries.add(new PaletteEntry("macro status", "AUTOMATION", "Show automation engine, cron & optional sensor status"));
@@ -169,6 +192,17 @@ public class KonsoleCommandPaletteDialog extends Dialog {
         mAllEntries.add(new PaletteEntry("settings bt", "SETTINGS", "Open Android Bluetooth settings"));
         mAllEntries.add(new PaletteEntry("settings apps", "SETTINGS", "Open Android Applications settings"));
         mAllEntries.add(new PaletteEntry("clear", "SHELL", "Clear terminal screen"));
+
+        // Launchable Konsole OS plugins
+        try {
+            for (KonsolePlugin plugin : KonsolePluginManager.getInstance().getLaunchablePlugins()) {
+                mAllEntries.add(new PaletteEntry(
+                    "kons plugin launch " + plugin.dirName,
+                    "PLUGIN",
+                    plugin.name + " v" + plugin.version + " · " + plugin.description));
+            }
+        } catch (Exception ignored) {
+        }
 
         // User aliases
         Map<String, String> aliases = KonsoleConfigManager.getInstance().getUserAliases();

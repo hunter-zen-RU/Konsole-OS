@@ -258,6 +258,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public Integer getTerminalCursorStyle() {
+        String customCursor = com.termux.app.konsole.KonsoleConfigManager.getInstance()
+            .getUiProperty("cursorStyle", "");
+        if ("UNDERLINE".equalsIgnoreCase(customCursor)) {
+            return com.termux.terminal.TerminalEmulator.TERMINAL_CURSOR_STYLE_UNDERLINE;
+        } else if ("BAR".equalsIgnoreCase(customCursor)) {
+            return com.termux.terminal.TerminalEmulator.TERMINAL_CURSOR_STYLE_BAR;
+        } else if ("BLOCK".equalsIgnoreCase(customCursor)) {
+            return com.termux.terminal.TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK;
+        }
         return mActivity.getProperties().getTerminalCursorStyle();
     }
 
@@ -501,6 +510,14 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 try (InputStream in = new FileInputStream(colorsFile)) {
                     props.load(in);
                 }
+            } else {
+                com.termux.app.konsole.KonsoleConfigManager cfg = com.termux.app.konsole.KonsoleConfigManager.getInstance();
+                String bgHex = cfg.getUiProperty("terminalBackgroundColor", "");
+                String fgHex = cfg.getUiProperty("textColor", "");
+                String cursorHex = cfg.getUiProperty("accentColor", "");
+                if (!bgHex.isEmpty()) props.setProperty("background", bgHex);
+                if (!fgHex.isEmpty()) props.setProperty("foreground", fgHex);
+                if (!cursorHex.isEmpty()) props.setProperty("cursor", cursorHex);
             }
 
             TerminalColors.COLOR_SCHEME.updateWith(props);
@@ -510,7 +527,26 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             }
             updateBackgroundColor();
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
+            Typeface newTypeface = Typeface.MONOSPACE;
+            if (fontFile.exists() && fontFile.length() > 0) {
+                newTypeface = Typeface.createFromFile(fontFile);
+            } else {
+                String fontFamily = com.termux.app.konsole.KonsoleConfigManager.getInstance()
+                    .getUiProperty("fontFamily", "monospace");
+                if ("sans-serif".equalsIgnoreCase(fontFamily) || "sans".equalsIgnoreCase(fontFamily)) {
+                    newTypeface = Typeface.SANS_SERIF;
+                } else if ("serif".equalsIgnoreCase(fontFamily)) {
+                    newTypeface = Typeface.SERIF;
+                } else if (!fontFamily.isEmpty() && !fontFamily.equalsIgnoreCase("monospace")) {
+                    File customFont = new File(fontFamily);
+                    if (!customFont.isAbsolute()) {
+                        customFont = new File(com.termux.app.konsole.KonsoleConfigManager.CUSTOMIZE_PATH, fontFamily);
+                    }
+                    if (customFont.isFile() && customFont.length() > 0) {
+                        newTypeface = Typeface.createFromFile(customFont);
+                    }
+                }
+            }
             mActivity.getTerminalView().setTypeface(newTypeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);

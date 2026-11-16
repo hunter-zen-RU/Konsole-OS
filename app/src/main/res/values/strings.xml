@@ -238,6 +238,13 @@
     <!-- Konsole System Dashboard -->
     <string name="action_open_dashboard">System Dashboard</string>
     <string name="title_konsole_dashboard">System Dashboard</string>
+    <string name="title_konsole_workstation">Pro Workstation</string>
+    <string name="konsole_workstation_pref_title">Pro Workstation Hub</string>
+    <string name="konsole_workstation_pref_summary">Proot distros, KeX desktop, daemons, PCAP, net recon, USB-OTG &amp; Keystore Vault</string>
+    <string name="konsole_dashboard_pref_title">Konsole OS Dashboard</string>
+    <string name="konsole_dashboard_pref_summary">Live telemetry, XML customization, Shade &amp; APT/PKG verification</string>
+    <string name="konsole_macrolab_pref_title">Macro Lab</string>
+    <string name="konsole_macrolab_pref_summary">Cron jobs, event triggers &amp; bidirectional script automation</string>
 
     <!-- Konsole Automation & Macro Lab -->
     <string name="title_konsole_macro_lab">Macro Lab</string>

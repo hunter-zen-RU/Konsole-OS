@@ -7,32 +7,22 @@
         app:fragment="com.termux.app.fragments.settings.TermuxPreferencesFragment"/>
 
     <Preference
-        app:key="termux_api"
-        app:title="@string/termux_api_preferences_title"
-        app:summary="@string/termux_api_preferences_summary"
-        app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxAPIPreferencesFragment"/>
+        app:key="konsole_workstation"
+        app:title="@string/konsole_workstation_pref_title"
+        app:summary="@string/konsole_workstation_pref_summary"
+        app:persistent="false"/>
 
     <Preference
-        app:key="termux_float"
-        app:title="@string/termux_float_preferences_title"
-        app:summary="@string/termux_float_preferences_summary"
-        app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxFloatPreferencesFragment"/>
+        app:key="konsole_dashboard"
+        app:title="@string/konsole_dashboard_pref_title"
+        app:summary="@string/konsole_dashboard_pref_summary"
+        app:persistent="false"/>
 
     <Preference
-        app:key="termux_tasker"
-        app:title="@string/termux_tasker_preferences_title"
-        app:summary="@string/termux_tasker_preferences_summary"
-        app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxTaskerPreferencesFragment"/>
-
-    <Preference
-        app:key="termux_widget"
-        app:title="@string/termux_widget_preferences_title"
-        app:summary="@string/termux_widget_preferences_summary"
-        app:isPreferenceVisible="false"
-        app:fragment="com.termux.app.fragments.settings.TermuxWidgetPreferencesFragment"/>
+        app:key="konsole_macro_lab"
+        app:title="@string/konsole_macrolab_pref_title"
+        app:summary="@string/konsole_macrolab_pref_summary"
+        app:persistent="false"/>
 
     <Preference
         app:key="about"

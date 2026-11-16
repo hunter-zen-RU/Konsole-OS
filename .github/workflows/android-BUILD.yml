@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version tag (optional, e.g. v1.0.0-35mos)'
+        description: 'Release version tag (optional, e.g. v1.0.0-premier)'
         required: false
         default: ''
 
@@ -118,11 +118,7 @@ jobs:
         cp "$SOURCE_APK" Konsole-OS.apk
         cp "$SOURCE_APK" "universal-${VERSION}-release.apk"
 
-        for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-          cp "$SOURCE_APK" "${abi}-${VERSION}-release.apk"
-        done
-
-        echo "Created Konsole-OS.apk, universal-${VERSION}-release.apk, and per-ABI named copies."
+        echo "Created universal release APKs: Konsole-OS.apk and universal-${VERSION}-release.apk."
 
     - name: Extract Release Notes and Generate Checksums
       id: release_notes
@@ -142,10 +138,6 @@ jobs:
 
         VERSION="${RELEASE_TAG}"
         UNIVERSAL_NAME="universal-${VERSION}-release.apk"
-        ARM64_NAME="arm64-v8a-${VERSION}-release.apk"
-        ARMV7_NAME="armeabi-v7a-${VERSION}-release.apk"
-        X86_NAME="x86-${VERSION}-release.apk"
-        X86_64_NAME="x86_64-${VERSION}-release.apk"
 
         cat << EOF > "$GITHUB_WORKSPACE/body.md"
         ### 🚀 Automated Build Details
@@ -160,15 +152,11 @@ jobs:
 
         ### 📦 APK Assets
 
-        ABI splits are disabled for this build. The architecture-named assets below are copies of the same universal APK, not separately optimized builds.
+        This release produces a single universal APK containing native support for all architectures.
 
         | Asset | Build Size | SHA-256 |
         | :--- | :--- | :--- |
         | \`${UNIVERSAL_NAME}\` (universal) | \`$(calc_size "$UNIVERSAL_NAME")\` | \`$(calc_sha "$UNIVERSAL_NAME")\` |
-        | \`${ARM64_NAME}\` | \`$(calc_size "$ARM64_NAME")\` | \`$(calc_sha "$ARM64_NAME")\` |
-        | \`${ARMV7_NAME}\` | \`$(calc_size "$ARMV7_NAME")\` | \`$(calc_sha "$ARMV7_NAME")\` |
-        | \`${X86_NAME}\` | \`$(calc_size "$X86_NAME")\` | \`$(calc_sha "$X86_NAME")\` |
-        | \`${X86_64_NAME}\` | \`$(calc_size "$X86_64_NAME")\` | \`$(calc_sha "$X86_64_NAME")\` |
         | \`Konsole-OS.apk\` | \`$(calc_size "Konsole-OS.apk")\` | \`$(calc_sha "Konsole-OS.apk")\` |
 
         ---
@@ -179,7 +167,7 @@ jobs:
 
         ### 📥 Installation
 
-        Download the universal APK or an ABI-named copy above, then install it on your Android device.
+        Download the universal APK above, then install it on your Android device.
         EOF
 
         if [ -f "$GITHUB_WORKSPACE/fix-bug.md" ]; then

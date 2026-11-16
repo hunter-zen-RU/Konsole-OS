@@ -3,23 +3,17 @@ package com.termux.app.konsole;
 import android.annotation.SuppressLint;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.WallpaperManager;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.content.ComponentName;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
-import android.media.ToneGenerator;
 import android.net.Uri;
+import android.net.VpnService;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
@@ -27,10 +21,8 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.provider.ContactsContract;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
@@ -189,26 +181,34 @@ public class KonsoleCommandDispatcher {
             }
         }
 
-        // Sudo Lockdown Interceptor
-        if (configMgr.isSudoLocked()) {
-            if (line.startsWith("lock --sudo-reset ")) {
-                String hashInput = line.substring("lock --sudo-reset ".length()).trim();
-                if (configMgr.resetSudoPasswordWithHash(hashInput)) {
-                    stopKioskLockdown(context);
-                    writeToTerminal(session, "\r\n\033[1;32m[Konsole OS Sudo]\033[0m Sudo password reset successfully! Screen unlocked.\r\n");
-                } else {
-                    writeToTerminal(session, "\r\n\033[1;31m[LOCKED]\033[0m Invalid rescue hash.\r\n");
-                }
-                return true;
-            } else if (configMgr.verifySudoPassword(line)) {
-                configMgr.setSudoLocked(false);
+        // Security Vault Lockdown Interceptor
+        KonsoleSecurityVault vault = KonsoleSecurityVault.getInstance();
+        if (vault.isLocked(context)) {
+            if (line.equalsIgnoreCase("lock --sudo-redo") || line.equalsIgnoreCase("kons vault redo")) {
+                vault.clearPassphraseAndUnlock(context);
+                configMgr.resetSudoRedoFactoryReset();
                 stopKioskLockdown(context);
-                writeToTerminal(session, "\r\n\033[1;32m[Konsole OS Sudo]\033[0m Password verified! Konsole OS unlocked.\r\n");
-                return true;
-            } else {
-                writeToTerminal(session, "\r\n\033[1;31m[LOCKED - KONSOLE OS SUDO LOCK]\033[0m Enter password or run 'lock --sudo-reset <rescue-hash>':\r\n");
+                writeToTerminal(session, "\r\n\033[1;32m[Konsole Vault]\033[0m Factory reset complete. Vault cleared & unlocked.\r\n");
                 return true;
             }
+            String candidate = line.startsWith("lock --pass ") ? line.substring("lock --pass ".length()).trim() : line;
+            if (vault.hasPassphrase(context)) {
+                if (vault.unlockWithPassphrase(context, candidate)) {
+                    stopKioskLockdown(context);
+                    writeToTerminal(session, "\r\n\033[1;32m[Konsole Vault]\033[0m Passphrase verified! Konsole OS unlocked.\r\n");
+                } else {
+                    writeToTerminal(session, "\r\n\033[1;31m[LOCKED - KONSOLE VAULT]\033[0m Enter vault passphrase (or 'lock --pass <pass>'):\r\n");
+                }
+            } else {
+                if (line.equalsIgnoreCase("lock --unlock") || line.equalsIgnoreCase("kons vault unlock")) {
+                    vault.setLocked(context, false);
+                    stopKioskLockdown(context);
+                    writeToTerminal(session, "\r\n\033[1;32m[Konsole Vault]\033[0m Vault unlocked.\r\n");
+                } else {
+                    writeToTerminal(session, "\r\n\033[1;31m[LOCKED - PANIC LOCK]\033[0m Run 'lock --unlock' or unlock in Workstation Hub.\r\n");
+                }
+            }
+            return true;
         }
 
         // Add input to Fish-shell auto-suggestion history
@@ -238,17 +238,6 @@ public class KonsoleCommandDispatcher {
             case "wifi":
                 return handleWifi(context, session, parts);
 
-            case "music":
-            case "media":
-                return handleMusic(context, session, parts);
-
-            case "call":
-                return handleCall(context, session, parts);
-
-            case "contact":
-            case "contacts":
-                return handleContacts(context, session, parts);
-
             case "volume":
             case "vol":
                 return handleVolume(context, session, parts);
@@ -264,17 +253,11 @@ public class KonsoleCommandDispatcher {
             case "vibrate":
                 return handleVibrate(context, session, parts);
 
-            case "beep":
-                return handleBeep(session, parts);
-
             case "brightness":
                 return handleBrightness(context, session, parts);
 
             case "dnd":
                 return handleDnd(context, session, parts);
-
-            case "wallpaper":
-                return handleWallpaper(context, session, parts);
 
             case "lock":
                 return handleLock(context, session, line, parts);
@@ -354,7 +337,7 @@ public class KonsoleCommandDispatcher {
 
     private boolean handleKonsSuite(Context context, TerminalSession session, String line, String[] parts) {
         if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: kons <dashboard|macro|apps|palette|search|install|run|remove|list|sys|hud|set|notify|toast|alias|setup-fish|update|version|about|help|switch>\r\n");
+            writeToTerminal(session, "\r\nUsage: kons <workstation|distro|kex|daemon|adb|net|pcap|usb|profile|vault|incognito|dashboard|macro|apps|plugins|shade|customize|reload|palette|search|install|run|remove|list|sys|hud|set|notify|toast|alias|setup-fish|update|version|about|help|switch>\r\n");
             return true;
         }
 
@@ -560,7 +543,7 @@ public class KonsoleCommandDispatcher {
             case "about":
                 writeToTerminal(session, "\r\n\033[1;36m====================================================\033[0m\r\n" +
                         "\033[1;32m  Konsole OS - Fish-Powered Terminal OS Environment\033[0m\r\n" +
-                        "\033[1;33m  Version:\033[0m v1.0.0-35mos (Build 118)\r\n" +
+                        "\033[1;33m  Version:\033[0m v1.0.0-premier (Build 118)\r\n" +
                         "\033[1;33m  Package:\033[0m " + TermuxConstants.TERMUX_PACKAGE_NAME + "\r\n" +
                         "\033[1;33m  Shell  :\033[0m Fish + Termux Prefix (" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + ")\r\n" +
                         "\033[1;33m  Author :\033[0m hunter-zen-RU\r\n" +
@@ -590,8 +573,772 @@ public class KonsoleCommandDispatcher {
                 }
                 return true;
 
+            case "plugin":
+            case "plugins":
+                return handlePluginSubcommand(context, session, parts);
+
+            case "shade":
+                return handleShadeSubcommand(context, session, parts);
+
+            case "reload":
+                return handleCustomizeSubcommand(context, session, new String[]{"kons", "customize", "reload"});
+
+            case "customize":
+            case "xml":
+                return handleCustomizeSubcommand(context, session, parts);
+
+            case "workstation":
+            case "hub":
+            case "pro":
+                return openWorkstationActivity(context, session);
+
+            case "distro":
+            case "proot":
+                return handleDistroSubcommand(context, session, parts);
+
+            case "kex":
+            case "vnc":
+                return handleKexSubcommand(context, session, parts);
+
+            case "daemon":
+            case "service":
+                return handleDaemonSubcommand(context, session, parts);
+
+            case "adb":
+                return handleAdbSubcommand(context, session, parts);
+
+            case "net":
+                return handleNetSubcommand(context, session, parts);
+
+            case "pcap":
+                return handlePcapSubcommand(context, session, parts);
+
+            case "usb":
+                return handleUsbSubcommand(context, session, parts);
+
+            case "profile":
+                return handleProfileSubcommand(context, session, parts);
+
+            case "vault":
+                return handleVaultSubcommand(context, session, parts);
+
+            case "incognito": {
+                Context incCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                if (incCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) incCtx).runOnUiThread(((TermuxActivity) incCtx)::startIncognitoSession);
+                    writeToTerminal(session, "\r\n\033[1;32m[Incognito]\033[0m Launching ephemeral shell session...\r\n");
+                } else {
+                    writeToTerminal(session, "\r\n\033[1;33m[Incognito]\033[0m Open interactive terminal window or Pro Workstation Hub to start an incognito session.\r\n");
+                }
+                return true;
+            }
+
             default:
                 writeToTerminal(session, "\r\nUnknown kons command: " + sub + ". Type 'kons help' for assistance.\r\n");
+                return true;
+        }
+    }
+
+    private boolean openWorkstationActivity(Context context, TerminalSession session) {
+        if (context == null) return false;
+        Intent intent = new Intent(context, KonsoleWorkstationActivity.class);
+        if (!(context instanceof android.app.Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        context.startActivity(intent);
+        writeToTerminal(session, "\r\n\033[1;32m[Konsole Pro]\033[0m Opening Pro Workstation Hub...\r\n");
+        return true;
+    }
+
+    private boolean handleDistroSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "list";
+        if ("list".equals(action) || "ls".equals(action)) {
+            boolean ready = KonsoleDaemonAndDistroManager.isProotDistroAvailable(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+            List<String> distros = KonsoleDaemonAndDistroManager.getInstalledDistros(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+            StringBuilder sb = new StringBuilder("\r\n\033[1;36m[Proot Distro Manager]\033[0m\r\n");
+            sb.append("  proot-distro : ").append(ready ? "READY" : "NOT INSTALLED (pkg install -y proot-distro)").append("\r\n");
+            sb.append("  Installed    : ").append(distros.isEmpty() ? "(none)" : String.join(", ", distros)).append("\r\n");
+            sb.append("  Usage        : kons distro <list|install <name>|login <name>>\r\n");
+            writeToTerminal(session, sb.toString());
+            return true;
+        }
+        String name = parts.length >= 4 ? parts[3] : "debian";
+        String cmd = "install".equals(action)
+                ? KonsoleDaemonAndDistroManager.buildInstallDistroCommand(name)
+                : KonsoleDaemonAndDistroManager.buildLoginDistroCommand(name);
+        if (session != null) {
+            byte[] b = ("\u0015" + cmd + "\n").getBytes(StandardCharsets.UTF_8);
+            session.write(b, 0, b.length);
+        } else {
+            writeToTerminal(session, "\r\n\033[1;36m[Proot Command]\033[0m " + cmd + "\r\n");
+        }
+        return true;
+    }
+
+    private boolean handleKexSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "status";
+        if ("install".equals(action) || "start".equals(action) || "stop".equals(action)) {
+            String cmd = "install".equals(action)
+                    ? KonsoleDaemonAndDistroManager.buildKexInstallCommand()
+                    : ("start".equals(action)
+                        ? KonsoleDaemonAndDistroManager.buildKexStartCommand(1)
+                        : KonsoleDaemonAndDistroManager.buildKexStopCommand(1));
+            if (session != null) {
+                byte[] b = ("\u0015" + cmd + "\n").getBytes(StandardCharsets.UTF_8);
+                session.write(b, 0, b.length);
+            } else {
+                writeToTerminal(session, "\r\n\033[1;36m[KeX Command]\033[0m " + cmd + "\r\n");
+            }
+            return true;
+        }
+        if ("connect".equals(action) || "open".equals(action)) {
+            boolean ok = KonsoleDaemonAndDistroManager.launchVncViewerUri(context, 5901);
+            writeToTerminal(session, ok
+                    ? "\r\n\033[1;32m[KeX VNC]\033[0m Launched VNC client for vnc://127.0.0.1:5901\r\n"
+                    : "\r\n\033[1;33m[KeX VNC]\033[0m Install a VNC viewer (bVNC / AVNC) and connect to 127.0.0.1:5901\r\n");
+            return true;
+        }
+        final BridgeState bridgeState = markAsyncDeferred();
+        new Thread(() -> {
+            boolean up = KonsoleDaemonAndDistroManager.isLocalPortOpen(5901, 150);
+            writeToSinkOrSession(bridgeState, session, "\r\n\033[1;36m[KeX VNC Status]\033[0m :5901 "
+                    + (up ? "\033[1;32mLISTENING\033[0m" : "\033[1;33mSTOPPED\033[0m")
+                    + "\r\n  Usage: kons kex <status|install|start|stop|connect>\r\n");
+            completeAsync(bridgeState, 0);
+        }).start();
+        return true;
+    }
+
+    private boolean handleDaemonSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "list";
+        if ("list".equals(action) || "ls".equals(action) || "status".equals(action)) {
+            final BridgeState bridgeState = markAsyncDeferred();
+            new Thread(() -> {
+                List<KonsoleDaemonAndDistroManager.DaemonStatus> list =
+                        KonsoleDaemonAndDistroManager.probeCoreDaemons(TermuxConstants.TERMUX_PREFIX_DIR_PATH);
+                StringBuilder sb = new StringBuilder("\r\n\033[1;36m[Workstation Daemons]\033[0m\r\n");
+                for (KonsoleDaemonAndDistroManager.DaemonStatus d : list) {
+                    sb.append(String.format(java.util.Locale.US, "  %-6s :%-5d  %-18s  %s  (%s)\r\n",
+                            d.id, d.port, d.label,
+                            d.running ? "\033[1;32mRUNNING\033[0m" : "STOPPED",
+                            d.installed ? "bin ok" : "not installed"));
+                }
+                sb.append("  Usage: kons daemon <list|start <id>|stop <id>>\r\n");
+                writeToSinkOrSession(bridgeState, session, sb.toString());
+                completeAsync(bridgeState, 0);
+            }).start();
+            return true;
+        }
+        if (parts.length >= 4 && ("start".equals(action) || "stop".equals(action))) {
+            final boolean start = "start".equals(action);
+            final String targetId = parts[3];
+            if (session != null) {
+                boolean ok = KonsoleDaemonAndDistroManager.startOrStopDaemonInSession(context, targetId, start, session);
+                if (!ok) writeToTerminal(session, "\r\nUnknown daemon id: " + targetId + " (use sshd|kex|tor|http|adb)\r\n");
+            } else {
+                final BridgeState bridgeState = markAsyncDeferred();
+                new Thread(() -> {
+                    boolean ok = KonsoleDaemonAndDistroManager.startOrStopDaemonInSession(context, targetId, start, null);
+                    writeToSinkOrSession(bridgeState, null, ok
+                            ? "\r\n\033[1;32m[Daemon]\033[0m " + targetId + " " + action + " executed.\r\n"
+                            : "\r\n\033[1;31m[Daemon]\033[0m Failed or unknown daemon: " + targetId + "\r\n");
+                    completeAsync(bridgeState, ok ? 0 : 1);
+                }).start();
+            }
+            return true;
+        }
+        writeToTerminal(session, "\r\nUsage: kons daemon <list|start <id>|stop <id>>\r\n");
+        return true;
+    }
+
+    private boolean handleAdbSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "status";
+        final BridgeState bridgeState = markAsyncDeferred();
+        new Thread(() -> {
+            int code = 0;
+            try {
+                if ("pair".equals(action) && parts.length >= 5) {
+                    KonsoleMacroExecutor.ExecutionOutcome out = KonsoleAdbBridge.pair(context, parts[3], parts[4]);
+                    code = out.exitCode;
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + out.output + "\r\n");
+                } else if ("connect".equals(action) && parts.length >= 4) {
+                    KonsoleMacroExecutor.ExecutionOutcome out = KonsoleAdbBridge.connect(context, parts[3]);
+                    code = out.exitCode;
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + out.output + "\r\n");
+                } else if ("shell".equals(action) && parts.length >= 4) {
+                    StringBuilder cmd = new StringBuilder();
+                    for (int i = 3; i < parts.length; i++) {
+                        if (cmd.length() > 0) cmd.append(' ');
+                        cmd.append(parts[i]);
+                    }
+                    KonsoleMacroExecutor.ExecutionOutcome out = KonsoleAdbBridge.runAdbShell(context, cmd.toString());
+                    code = out.exitCode;
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + out.output + "\r\n");
+                } else if ("settings".equals(action)) {
+                    KonsoleAdbBridge.openWirelessDebugSettings(context);
+                    writeToSinkOrSession(bridgeState, session, "\r\n\033[1;32m[ADB Bridge]\033[0m Opened Developer Options.\r\n");
+                } else {
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + KonsoleAdbBridge.getStatusReport(context) + "\r\n");
+                }
+            } finally {
+                completeAsync(bridgeState, code);
+            }
+        }).start();
+        return true;
+    }
+
+    private boolean handleNetSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "ifaces";
+        switch (action) {
+            case "ifaces":
+            case "arp": {
+                final BridgeState bridgeState = markAsyncDeferred();
+                new Thread(() -> {
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + KonsoleNetDiagnostics.getInterfacesAndArpReport() + "\r\n");
+                    completeAsync(bridgeState, 0);
+                }).start();
+                return true;
+            }
+            case "scan": {
+                String host = parts.length >= 4 ? parts[3] : "127.0.0.1";
+                String portSpec = parts.length >= 5 ? parts[4] : "";
+                final BridgeState bridgeState = markAsyncDeferred();
+                new Thread(() -> {
+                    List<Integer> ports = KonsoleNetDiagnostics.parsePortSpec(portSpec);
+                    String res = KonsoleNetDiagnostics.scanTcpPorts(host, ports, 350);
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + res + "\r\n");
+                    completeAsync(bridgeState, 0);
+                }).start();
+                return true;
+            }
+            case "tls": {
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons net tls <host> [port]\r\n");
+                    return true;
+                }
+                final String host = parts[3];
+                int p = 443;
+                if (parts.length >= 5) {
+                    try { p = Integer.parseInt(parts[4]); } catch (Exception ignored) {}
+                }
+                final int port = p;
+                final BridgeState bridgeState = markAsyncDeferred();
+                new Thread(() -> {
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + KonsoleNetDiagnostics.inspectTlsCertificate(host, port) + "\r\n");
+                    completeAsync(bridgeState, 0);
+                }).start();
+                return true;
+            }
+            case "wifi": {
+                writeToTerminal(session, "\r\n" + KonsoleNetDiagnostics.scanWifiBss(context) + "\r\n");
+                return true;
+            }
+            case "ble": {
+                final BridgeState bridgeState = markAsyncDeferred();
+                KonsoleNetDiagnostics.scanBleAsync(context, 3500L, report -> {
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + report + "\r\n");
+                    completeAsync(bridgeState, 0);
+                });
+                return true;
+            }
+            case "mdns": {
+                String svcType = parts.length >= 4 ? parts[3] : "_http._tcp.";
+                final BridgeState bridgeState = markAsyncDeferred();
+                KonsoleNetDiagnostics.discoverMdnsServicesAsync(context, svcType, 3000L, report -> {
+                    writeToSinkOrSession(bridgeState, session, "\r\n" + report + "\r\n");
+                    completeAsync(bridgeState, 0);
+                });
+                return true;
+            }
+            default:
+                writeToTerminal(session, "\r\nUsage: kons net <ifaces|scan <host> [ports]|tls <host> [port]|wifi|ble|mdns [type]>\r\n");
+                return true;
+        }
+    }
+
+    private boolean handlePcapSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "status";
+        switch (action) {
+            case "start": {
+                Intent prep = VpnService.prepare(context);
+                if (prep != null) {
+                    openWorkstationActivity(context, session);
+                    writeToTerminal(session, "\r\n\033[1;33m[PCAP]\033[0m Android requires VPN consent dialog. Opening Pro Workstation Hub...\r\n");
+                } else {
+                    Intent i = new Intent(context, KonsolePcapVpnService.class).setAction(KonsolePcapVpnService.ACTION_START);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i);
+                    else context.startService(i);
+                    writeToTerminal(session, "\r\n\033[1;32m[PCAP]\033[0m Rootless packet capture started -> $konsole/captures/\r\n");
+                }
+                return true;
+            }
+            case "stop":
+                KonsolePcapVpnService.stopCapture(context);
+                writeToTerminal(session, "\r\n\033[1;33m[PCAP]\033[0m Packet capture stopped.\r\n");
+                return true;
+            case "list":
+            case "ls": {
+                List<File> files = KonsolePcapVpnService.listSavedCaptures();
+                StringBuilder sb = new StringBuilder("\r\n\033[1;36m[Saved PCAP Captures (" + KonsolePcapVpnService.CAPTURES_PATH + ")]\033[0m\r\n");
+                if (files.isEmpty()) sb.append("  (No .pcap files saved yet)\r\n");
+                else for (File f : files) sb.append("  ").append(f.getName()).append("  (").append(f.length()).append(" bytes)\r\n");
+                writeToTerminal(session, sb.toString());
+                return true;
+            }
+            default:
+                writeToTerminal(session, "\r\n\033[1;36m[PCAP Status]\033[0m "
+                        + (KonsolePcapVpnService.isRunning()
+                            ? "\033[1;32mCAPTURING\033[0m (" + KonsolePcapVpnService.getPacketCount() + " pkts, " + KonsolePcapVpnService.getActiveCapturePath() + ")"
+                            : "IDLE")
+                        + "\r\n  Usage: kons pcap <status|start|stop|list>\r\n");
+                return true;
+        }
+    }
+
+    private boolean handleUsbSubcommand(Context context, TerminalSession session, String[] parts) {
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "list";
+        if ("send".equals(action) && parts.length >= 4) {
+            final String payload = parts[3];
+            int b = 115200;
+            if (parts.length >= 5) {
+                try { b = Integer.parseInt(parts[4]); } catch (Exception ignored) {}
+            }
+            final int baud = b;
+            List<KonsoleUsbSerialManager.UsbDeviceSummary> devs = KonsoleUsbSerialManager.listAttachedDevices(context);
+            if (devs.isEmpty()) {
+                writeToTerminal(session, "\r\n\033[1;33m[USB-OTG]\033[0m No USB devices attached.\r\n");
+                return true;
+            }
+            final BridgeState bridgeState = markAsyncDeferred();
+            new Thread(() -> {
+                String res = KonsoleUsbSerialManager.exchangeCdcSerial(context, devs.get(0).device, payload, baud, 1200);
+                writeToSinkOrSession(bridgeState, session, "\r\n\033[1;36m[USB Serial]\033[0m " + res + "\r\n");
+                completeAsync(bridgeState, 0);
+            }).start();
+            return true;
+        }
+        writeToTerminal(session, "\r\n" + KonsoleUsbSerialManager.formatDeviceReport(context) + "\r\n");
+        return true;
+    }
+
+    private boolean handleProfileSubcommand(Context context, TerminalSession session, String[] parts) {
+        KonsoleConfigManager cfg = KonsoleConfigManager.getInstance();
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "list";
+        if ("list".equals(action) || "ls".equals(action)) {
+            List<String> profiles = cfg.listProfiles();
+            writeToTerminal(session, "\r\n\033[1;36m[Workstation Profiles]\033[0m Active: \033[1;32m"
+                    + cfg.getActiveProfile() + "\033[0m\r\n  Available: " + String.join(", ", profiles)
+                    + "\r\n  Usage: kons profile set <name>\r\n");
+            return true;
+        }
+        String target = ("set".equals(action) || "use".equals(action)) && parts.length >= 4 ? parts[3] : action;
+        if (cfg.setActiveProfile(target)) {
+            Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+            if (uiCtx instanceof TermuxActivity) {
+                ((TermuxActivity) uiCtx).runOnUiThread(() -> ((TermuxActivity) uiCtx).applyKonsoleXmlCustomization(false));
+            }
+            writeToTerminal(session, "\r\n\033[1;32m[Profile]\033[0m Switched to profile '\033[1;36m" + target + "\033[0m'.\r\n");
+        } else {
+            writeToTerminal(session, "\r\n\033[1;31m[Profile]\033[0m Profile not found: " + target + "\r\n");
+        }
+        return true;
+    }
+
+    private boolean handleVaultSubcommand(Context context, TerminalSession session, String[] parts) {
+        KonsoleSecurityVault vault = KonsoleSecurityVault.getInstance();
+        String action = parts.length >= 3 ? parts[2].toLowerCase() : "status";
+        switch (action) {
+            case "status":
+                writeToTerminal(session, "\r\n\033[1;36m[Konsole Keystore Vault]\033[0m Passphrase: "
+                        + (vault.hasPassphrase(context) ? "SET" : "UNSET")
+                        + " | State: " + (vault.isLocked(context) ? "LOCKED" : "UNLOCKED")
+                        + " | Secrets: " + vault.listSecretKeys(context).size()
+                        + "\r\n  Usage: kons vault <status|set-pass <p>|lock|unlock [p]|put <k> <v>|get <k>|ls|del <k>|panic>\r\n");
+                return true;
+            case "set-pass":
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons vault set-pass <min-4-char-passphrase>\r\n");
+                    return true;
+                }
+                boolean setOk = vault.setPassphrase(context, parts[3]);
+                writeToTerminal(session, setOk
+                        ? "\r\n\033[1;32m[Vault]\033[0m PBKDF2 passphrase stored in app-private storage.\r\n"
+                        : "\r\n\033[1;31m[Vault]\033[0m Passphrase must be at least 4 characters.\r\n");
+                return true;
+            case "lock":
+                vault.setLocked(context, true);
+                writeToTerminal(session, "\r\n\033[1;33m[Vault]\033[0m Vault locked.\r\n");
+                return true;
+            case "unlock": {
+                boolean ok = vault.hasPassphrase(context)
+                        ? (parts.length >= 4 && vault.unlockWithPassphrase(context, parts[3]))
+                        : true;
+                if (ok) vault.setLocked(context, false);
+                writeToTerminal(session, ok
+                        ? "\r\n\033[1;32m[Vault]\033[0m Vault unlocked.\r\n"
+                        : "\r\n\033[1;31m[Vault]\033[0m Invalid passphrase.\r\n");
+                return true;
+            }
+            case "put":
+                if (parts.length < 5) {
+                    writeToTerminal(session, "\r\nUsage: kons vault put <key> <value>\r\n");
+                    return true;
+                }
+                StringBuilder val = new StringBuilder();
+                for (int i = 4; i < parts.length; i++) {
+                    if (val.length() > 0) val.append(' ');
+                    val.append(parts[i]);
+                }
+                boolean putOk = vault.putSecret(context, parts[3], val.toString());
+                writeToTerminal(session, putOk
+                        ? "\r\n\033[1;32m[Vault]\033[0m Encrypted & stored key '" + parts[3] + "' with AndroidKeyStore AES-GCM.\r\n"
+                        : "\r\n\033[1;31m[Vault]\033[0m Failed storing secret.\r\n");
+                return true;
+            case "get":
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons vault get <key>\r\n");
+                    return true;
+                }
+                String secret = vault.getSecret(context, parts[3]);
+                writeToTerminal(session, secret != null
+                        ? "\r\n\033[1;36m[" + parts[3] + "]\033[0m " + secret + "\r\n"
+                        : "\r\n\033[1;33m[Vault]\033[0m Key not found or vault locked.\r\n");
+                return true;
+            case "ls":
+            case "list": {
+                List<String> keys = vault.listSecretKeys(context);
+                writeToTerminal(session, "\r\n\033[1;36m[Vault Keys]\033[0m " + (keys.isEmpty() ? "(none)" : String.join(", ", keys)) + "\r\n");
+                return true;
+            }
+            case "del":
+            case "rm":
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons vault del <key>\r\n");
+                    return true;
+                }
+                boolean delOk = vault.deleteSecret(context, parts[3]);
+                writeToTerminal(session, delOk
+                        ? "\r\n\033[1;32m[Vault]\033[0m Deleted key '" + parts[3] + "'.\r\n"
+                        : "\r\n\033[1;33m[Vault]\033[0m Key not found.\r\n");
+                return true;
+            case "panic":
+                writeToTerminal(session, "\r\n\033[1;31m[PANIC LOCKDOWN]\033[0m " + vault.triggerPanicLockdown(context) + "\r\n");
+                return true;
+            default:
+                writeToTerminal(session, "\r\nUsage: kons vault <status|set-pass|lock|unlock|put|get|ls|del|panic>\r\n");
+                return true;
+        }
+    }
+
+    private boolean handlePluginSubcommand(Context context, TerminalSession session, String[] parts) {
+        KonsolePluginManager pm = KonsolePluginManager.getInstance();
+        pm.ensureSeedFiles(context);
+        if (parts.length < 3) {
+            Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+            if (uiCtx instanceof TermuxActivity) {
+                ((TermuxActivity) uiCtx).runOnUiThread(((TermuxActivity) uiCtx)::showPluginsLauncherDialog);
+            } else {
+                writeToTerminal(session, "\r\nUsage: kons plugin <list|launch|templates|install|remove|enable|disable>\r\n");
+            }
+            return true;
+        }
+
+        String action = parts[2].toLowerCase();
+        switch (action) {
+            case "list":
+            case "ls": {
+                List<KonsolePlugin> all = pm.getAllPlugins();
+                writeToTerminal(session, "\r\n\033[1;36m====================================================\033[0m\r\n" +
+                        "\033[1;32m       KONSOLE OS PLUGINS ($konsole/plugins)        \033[0m\r\n" +
+                        "\033[1;36m====================================================\033[0m\r\n");
+                if (all.isEmpty()) {
+                    writeToTerminal(session, " (No plugins found in " + KonsoleConfigManager.PLUGINS_PATH + ")\r\n");
+                } else {
+                    for (KonsolePlugin p : all) {
+                        String typeTag = p.isLaunchable() ? "\033[1;35mLAUNCHABLE\033[0m" : "\033[1;33mEXTENTION\033[0m";
+                        writeToTerminal(session, " \033[1;36m" + p.name + "\033[0m (\033[1;32mv" + p.version + "\033[0m) [" + typeTag + "] "
+                                + "build=" + p.build + " entry=" + p.startingFile
+                                + (p.enabled ? "" : " \033[1;31m[DISABLED]\033[0m") + "\r\n");
+                        if (!p.description.isEmpty()) {
+                            writeToTerminal(session, "   " + p.description + " (" + p.flatFiles.size() + " files)\r\n");
+                        }
+                    }
+                }
+                writeToTerminal(session, "\033[1;36m====================================================\033[0m\r\n");
+                return true;
+            }
+            case "launch":
+            case "run":
+            case "open": {
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons plugin launch <plugin-name>\r\n");
+                    return true;
+                }
+                String targetName = parts[3];
+                KonsolePlugin target = pm.findPluginByName(targetName);
+                if (target == null) {
+                    writeToTerminal(session, "\r\n\033[1;31m[Plugins]\033[0m Plugin '" + targetName + "' not found.\r\n");
+                    return true;
+                }
+                Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+                if (uiCtx instanceof android.app.Activity) {
+                    ((android.app.Activity) uiCtx).runOnUiThread(() -> pm.launchPlugin(uiCtx, target, session));
+                } else {
+                    pm.launchPlugin(context, target, session);
+                }
+                writeToTerminal(session, "\r\n\033[1;32m[Plugins]\033[0m Launched \033[1;36m" + target.name + "\033[0m (" + target.startingFile + ").\r\n");
+                return true;
+            }
+            case "templates":
+            case "remote": {
+                final String url = parts.length >= 4 ? parts[3] : KonsolePluginManager.DEFAULT_REGISTRY_URL;
+                final BridgeState bridgeState = markAsyncDeferred();
+                writeToTerminal(session, "\r\n\033[1;36m[Plugins]\033[0m Fetching templates from " + url + "...\r\n");
+                new Thread(() -> {
+                    int code = 0;
+                    try {
+                        List<KonsolePluginManager.RemotePluginTemplate> list = pm.fetchGitHubTemplates(url);
+                        StringBuilder out = new StringBuilder();
+                        out.append("\r\n\033[1;36m====================================================\033[0m\r\n");
+                        for (KonsolePluginManager.RemotePluginTemplate tpl : list) {
+                            out.append(" \033[1;33m").append(tpl.name).append("\033[0m (v").append(tpl.version)
+                                    .append(") [\033[1;36m").append(tpl.type.toUpperCase()).append("\033[0m]\r\n");
+                            if (!tpl.description.isEmpty()) {
+                                out.append("   ").append(tpl.description).append("\r\n");
+                            }
+                            out.append("   URL: ").append(tpl.url).append("\r\n");
+                        }
+                        if (list.isEmpty()) {
+                            out.append(" (No plugin templates returned)\r\n");
+                        }
+                        out.append("\033[1;36m====================================================\033[0m\r\n");
+                        writeToSinkOrSession(bridgeState, session, out.toString());
+                    } catch (Exception e) {
+                        code = 1;
+                        writeToSinkOrSession(bridgeState, session, "\r\n\033[1;31m[Plugins]\033[0m Fetch failed: " + e.getMessage() + "\r\n");
+                    } finally {
+                        completeAsync(bridgeState, code);
+                    }
+                }).start();
+                return true;
+            }
+            case "install": {
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons plugin install <template-name> [zip-url|registry-url]\r\n");
+                    return true;
+                }
+                final String targetName = parts[3];
+                final String extraUrl = parts.length >= 5 ? parts[4] : null;
+                final BridgeState bridgeState = markAsyncDeferred();
+                writeToTerminal(session, "\r\n\033[1;36m[Plugins]\033[0m Resolving plugin template '" + targetName + "'...\r\n");
+                new Thread(() -> {
+                    int code = 0;
+                    try {
+                        KonsolePluginManager.RemotePluginTemplate matched = null;
+                        if (extraUrl != null && extraUrl.toLowerCase().endsWith(".zip")) {
+                            matched = new KonsolePluginManager.RemotePluginTemplate();
+                            matched.name = targetName;
+                            matched.version = "1.0";
+                            matched.type = KonsolePlugin.TYPE_LAUNCHABLE;
+                            matched.description = "Installed from " + extraUrl;
+                            matched.url = extraUrl;
+                        } else {
+                            String reg = extraUrl != null ? extraUrl : KonsolePluginManager.DEFAULT_REGISTRY_URL;
+                            for (KonsolePluginManager.RemotePluginTemplate t : pm.fetchGitHubTemplates(reg)) {
+                                if (targetName.equalsIgnoreCase(t.name)) {
+                                    matched = t;
+                                    break;
+                                }
+                            }
+                        }
+                        if (matched == null) {
+                            code = 1;
+                            writeToSinkOrSession(bridgeState, session, "\r\n\033[1;31m[Plugins]\033[0m Template '" + targetName + "' not found in GitHub registry.\r\n");
+                            return;
+                        }
+                        KonsolePlugin installed = pm.installPluginTemplateBlocking(context, matched);
+                        writeToSinkOrSession(bridgeState, session, "\r\n\033[1;32m[Plugins]\033[0m Installed '\033[1;36m" + installed.name
+                                + "\033[0m' (" + installed.getNormalizedType() + ") to $konsole/plugins/" + installed.dirName + "\r\n");
+                    } catch (Exception e) {
+                        code = 1;
+                        writeToSinkOrSession(bridgeState, session, "\r\n\033[1;31m[Plugins]\033[0m Install error: " + e.getMessage() + "\r\n");
+                    } finally {
+                        completeAsync(bridgeState, code);
+                    }
+                }).start();
+                return true;
+            }
+            case "remove":
+            case "rm": {
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons plugin remove <plugin-name>\r\n");
+                    return true;
+                }
+                boolean ok = pm.removePlugin(parts[3]);
+                writeToTerminal(session, ok
+                        ? "\r\n\033[1;32m[Plugins]\033[0m Removed plugin '" + parts[3] + "'.\r\n"
+                        : "\r\n\033[1;31m[Plugins]\033[0m Plugin '" + parts[3] + "' not found.\r\n");
+                return true;
+            }
+            case "enable":
+            case "disable": {
+                if (parts.length < 4) {
+                    writeToTerminal(session, "\r\nUsage: kons plugin " + action + " <plugin-name>\r\n");
+                    return true;
+                }
+                boolean enable = "enable".equals(action);
+                boolean ok = pm.setPluginEnabled(parts[3], enable);
+                writeToTerminal(session, ok
+                        ? "\r\n\033[1;32m[Plugins]\033[0m Plugin '" + parts[3] + "' " + (enable ? "enabled" : "disabled") + ".\r\n"
+                        : "\r\n\033[1;31m[Plugins]\033[0m Failed updating plugin '" + parts[3] + "'.\r\n");
+                return true;
+            }
+            default:
+                writeToTerminal(session, "\r\nUsage: kons plugin <list|launch|templates|install|remove|enable|disable>\r\n");
+                return true;
+        }
+    }
+
+    private boolean handleShadeSubcommand(Context context, TerminalSession session, String[] parts) {
+        KonsoleConfigManager cfg = KonsoleConfigManager.getInstance();
+        String sub = parts.length >= 3 ? parts[2].toLowerCase() : "open";
+        Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+
+        switch (sub) {
+            case "open":
+            case "show":
+                if (uiCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) uiCtx).runOnUiThread(((TermuxActivity) uiCtx)::openCustomShade);
+                } else {
+                    KonsoleShadeService.showGlobalShade(context);
+                }
+                writeToTerminal(session, "\r\n\033[1;32m[Konsole Shade]\033[0m Custom Shade opened.\r\n");
+                return true;
+
+            case "close":
+            case "hide":
+                if (uiCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) uiCtx).runOnUiThread(((TermuxActivity) uiCtx)::closeCustomShade);
+                }
+                context.startService(new Intent(context, KonsoleShadeService.class).setAction(KonsoleShadeService.ACTION_HIDE_SHADE));
+                writeToTerminal(session, "\r\n\033[1;32m[Konsole Shade]\033[0m Custom Shade closed.\r\n");
+                return true;
+
+            case "set":
+            case "on":
+            case "enable":
+                cfg.setShadeProperty("replaceSystemShade", "true");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(context)) {
+                    Intent overlayIntent = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + context.getPackageName()));
+                    overlayIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(overlayIntent);
+                    writeToTerminal(session, "\r\n\033[1;33m[Konsole Shade]\033[0m Set in $konsole/customize/shade.xml. Grant 'Display over other apps' permission to activate global top-edge shade.\r\n");
+                } else {
+                    KonsoleShadeService.startIfEnabled(context);
+                    writeToTerminal(session, "\r\n\033[1;32m[Konsole Shade]\033[0m Konsole Custom Shade set as active replacement shade!\r\n");
+                }
+                return true;
+
+            case "unset":
+            case "off":
+            case "disable":
+                cfg.setShadeProperty("replaceSystemShade", "false");
+                KonsoleShadeService.stopService(context);
+                writeToTerminal(session, "\r\n\033[1;33m[Konsole Shade]\033[0m Global custom shade replacement disabled.\r\n");
+                return true;
+
+            case "status":
+                boolean replace = cfg.getShadeBoolean("replaceSystemShade", false);
+                boolean overlayOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || android.provider.Settings.canDrawOverlays(context);
+                boolean notifOk = KonsoleNotificationListenerService.isConnected();
+                boolean a11yOk = KonsoleAutomationAccessibilityService.isConnected();
+                writeToTerminal(session, "\r\n\033[1;36m[Konsole Shade Status]\033[0m\r\n" +
+                        "  Enabled (in-app)    : " + cfg.getShadeBoolean("enabled", true) + "\r\n" +
+                        "  Replace Default     : " + replace + "\r\n" +
+                        "  Overlay Permission  : " + (overlayOk ? "GRANTED" : "MISSING") + "\r\n" +
+                        "  Notification Access : " + (notifOk ? "CONNECTED" : "NOT GRANTED") + "\r\n" +
+                        "  Accessibility Hook  : " + (a11yOk ? "ACTIVE" : "OFF") + "\r\n" +
+                        "  Config File         : " + KonsoleConfigManager.FILE_SHADE_XML + "\r\n");
+                return true;
+
+            default:
+                writeToTerminal(session, "\r\nUsage: kons shade <open|close|set|unset|status>\r\n");
+                return true;
+        }
+    }
+
+    private boolean handleCustomizeSubcommand(Context context, TerminalSession session, String[] parts) {
+        KonsoleConfigManager cfg = KonsoleConfigManager.getInstance();
+        String sub = parts.length >= 3 ? parts[2].toLowerCase() : "list";
+        Context uiCtx = KonsoleFishBridge.getInstance().getUiContext(context);
+
+        switch (sub) {
+            case "reload":
+                cfg.loadAllConfigurations();
+                KonsoleFishBridge.syncStateFiles(context);
+                if (uiCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) uiCtx).runOnUiThread(() -> ((TermuxActivity) uiCtx).applyKonsoleXmlCustomization(true));
+                }
+                KonsoleShadeService.startIfEnabled(context);
+                writeToTerminal(session, "\r\n\033[1;32m[Konsole Customize]\033[0m Reloaded XML configs from $konsole/customize/ and applied live.\r\n");
+                return true;
+
+            case "list": {
+                String cat = parts.length >= 4 ? parts[3].toLowerCase() : "all";
+                StringBuilder out = new StringBuilder("\r\n\033[1;36m[Konsole XML Config ($konsole/customize)]\033[0m\r\n");
+                if ("all".equals(cat) || "ui".equals(cat)) {
+                    out.append(" \033[1;33m<ui> (ui.xml):\033[0m ").append(cfg.getUiProperties()).append("\r\n");
+                }
+                if ("all".equals(cat) || "shade".equals(cat)) {
+                    out.append(" \033[1;33m<shade> (shade.xml):\033[0m ").append(cfg.getShadeProperties()).append("\r\n");
+                }
+                if ("all".equals(cat) || "experience".equals(cat)) {
+                    out.append(" \033[1;33m<experience> (experience.xml):\033[0m ").append(cfg.getExperienceProperties()).append("\r\n");
+                }
+                if ("all".equals(cat) || "behavior".equals(cat)) {
+                    out.append(" \033[1;33m<behavior> (behavior.xml):\033[0m ").append(cfg.getBehaviorProperties()).append("\r\n");
+                }
+                writeToTerminal(session, out.toString());
+                return true;
+            }
+
+            case "set": {
+                if (parts.length < 6) {
+                    writeToTerminal(session, "\r\nUsage: kons customize set <ui|shade|behavior|experience> <key> <value>\r\n");
+                    return true;
+                }
+                String cat = parts[3];
+                String key = parts[4];
+                StringBuilder val = new StringBuilder();
+                for (int i = 5; i < parts.length; i++) {
+                    if (val.length() > 0) val.append(' ');
+                    val.append(parts[i]);
+                }
+                if (cfg.setCustomizeProperty(cat, key, val.toString())) {
+                    KonsoleFishBridge.syncStateFiles(context);
+                    if (uiCtx instanceof TermuxActivity) {
+                        ((TermuxActivity) uiCtx).runOnUiThread(() -> ((TermuxActivity) uiCtx).applyKonsoleXmlCustomization(true));
+                    }
+                    KonsoleShadeService.startIfEnabled(context);
+                    writeToTerminal(session, "\r\n\033[1;32m[Konsole Customize]\033[0m Set " + cat + "." + key + " = " + val + "\r\n");
+                } else {
+                    writeToTerminal(session, "\r\n\033[1;31m[Konsole Customize]\033[0m Unknown category '" + cat + "'. Use ui|shade|behavior|experience.\r\n");
+                }
+                return true;
+            }
+
+            case "reset":
+                cfg.resetDefaultCustomizeXml();
+                KonsoleFishBridge.syncStateFiles(context);
+                if (uiCtx instanceof TermuxActivity) {
+                    ((TermuxActivity) uiCtx).runOnUiThread(() -> ((TermuxActivity) uiCtx).applyKonsoleXmlCustomization(true));
+                }
+                writeToTerminal(session, "\r\n\033[1;32m[Konsole Customize]\033[0m Restored default XML files in $konsole/customize/.\r\n");
+                return true;
+
+            default:
+                writeToTerminal(session, "\r\nUsage: kons customize <reload|list [cat]|set <cat> <key> <val>|reset>\r\n");
                 return true;
         }
     }
@@ -1522,50 +2269,44 @@ public class KonsoleCommandDispatcher {
 
     private void printHelpManual(TerminalSession session) {
         String help = "\r\n\033[1;36m=====================================================================\033[0m\r\n" +
-                "\033[1;32m               KONSOLE OS COMMAND MANUAL (FISH SHELL)                \033[0m\r\n" +
+                "\033[1;32m            KONSOLE OS PRO COMMAND MANUAL (FISH SHELL)               \033[0m\r\n" +
                 "\033[1;36m=====================================================================\033[0m\r\n\n" +
-                "\033[1;33m[ System & Apps ]\033[0m\r\n" +
+                "\033[1;33m[ NetHunter Rootless / Pro Workstation ]\033[0m\r\n" +
+                "  kons workstation        - Open Pro Workstation Hub (Distros, PCAP, Recon, USB, Vault)\r\n" +
+                "  kons distro <list|install|login> - Manage Proot Linux containers ($konsole bound)\r\n" +
+                "  kons kex <status|install|start|stop|connect> - KeX TigerVNC desktop (:5901)\r\n" +
+                "  kons daemon <list|start|stop <id>> - Probe/toggle sshd(:8022), kex(:5901), tor(:9050), http(:8080), adb(:5555)\r\n" +
+                "  kons adb <status|pair|connect|shell> - Rootless Wireless ADB bridge\r\n" +
+                "  kons net <ifaces|scan|tls|wifi|ble|mdns> - Interfaces/ARP, TCP banner scan, X.509, Wi-Fi BSS, BLE, mDNS\r\n" +
+                "  kons pcap <status|start|stop|list> - Rootless VpnService libpcap capture ($konsole/captures)\r\n" +
+                "  kons usb <list|send <payload> [baud]> - USB-OTG CDC/UART serial peripheral bridge\r\n" +
+                "  kons profile <list|set <default|lab|stealth>> - Switch workspace profiles\r\n" +
+                "  kons vault <status|set-pass|lock|unlock|put|get|ls|del|panic> - AndroidKeyStore AES-GCM vault\r\n" +
+                "  kons incognito          - Launch ephemeral no-history shell workspace\r\n\n" +
+                "\033[1;33m[ Hardware & System Controls ]\033[0m\r\n" +
                 "  <app-name>              - Fuzzy-launch installed Android apps (via Fish)\r\n" +
                 "  uninstall <app-name>    - Uninstall specified Android app\r\n" +
-                "  settings [wifi|bt|apps] - Open Android system settings\r\n\n" +
-                "\033[1;33m[ Hardware & Connectivity ]\033[0m\r\n" +
+                "  settings [wifi|bt|apps] - Open Android system settings\r\n" +
                 "  bluetooth status|on|off|ls|connect <mac>\r\n" +
                 "  wifi status|on|off|ls|connect <ssid>\r\n" +
                 "  flash on|off            - Toggle camera flashlight\r\n" +
                 "  battery                 - Detailed battery state & health\r\n" +
                 "  brightness <0-100|auto> - Adjust screen brightness\r\n" +
                 "  dnd on|off              - Toggle Do Not Disturb mode\r\n" +
-                "  wallpaper <path>        - Set home screen wallpaper\r\n" +
-                "  lock                    - Lock device screen\r\n\n" +
-                "\033[1;33m[ Communications & Media ]\033[0m\r\n" +
-                "  call <number|name>      - Resolve contact name and place call\r\n" +
-                "  contact ls|search <q>   - Search device contacts\r\n" +
-                "  music play|pause|stop|ls- Media player control & track listing\r\n" +
                 "  volume <stream> <level> - Adjust stream volume (media, ringer, etc.)\r\n" +
                 "  vibrate <pattern>       - Vibrate pattern (e.g. 0,300,500)\r\n" +
-                "  beep <pattern>          - Play audio tone sequence\r\n" +
-                "  calc <expression>       - Evaluate math expression\r\n\n" +
-                "\033[1;33m[ Kons OS Management & Automation ]\033[0m\r\n" +
+                "  calc <expression>       - Evaluate math expression\r\n" +
+                "  lock [--pass-set|--sudo|--panic|--sudo-redo] - Vault/Task lock & panic wipe\r\n\n" +
+                "\033[1;33m[ Konsole OS Management, Plugins & Automation ]\033[0m\r\n" +
                 "  kons dashboard          - Open live system stats, path & toggle Dashboard\r\n" +
-                "  kons macro              - Open visual UI Macro Lab (triggers, cron & tests)\r\n" +
-                "  macro <lab|list|trigger|notify|toast|flash|tap|swipe>\r\n" +
-                "                          - Bidirectional script-to-Android automation CLI\r\n" +
-                "  kons setup-fish         - Install/update native Fish shell environment\r\n" +
-                "  kons apps               - Terminal-styled GUI apps grid\r\n" +
-                "  kons palette            - Open fuzzy Command Palette (also HUD CMD)\r\n" +
-                "  kons sys                - Live hardware, CPU, RAM & network telemetry\r\n" +
-                "  kons hud <on|off>       - Show or hide top telemetry HUD bar\r\n" +
-                "  kons search [query]     - Search remote Konsole OS package catalog\r\n" +
-                "  kons install <pkg>      - Install script/kos ($PREFIX/bin) or deb (dpkg -i)\r\n" +
-                "  kons run <pkg> [args]   - Run installed package directly (bypasses shell builtins)\r\n" +
-                "  kons remove <pkg>       - Remove installed kons package\r\n" +
-                "  kons list               - List installed kons packages\r\n" +
-                "  kons set <key=val>      - Save persistent user variable\r\n" +
-                "  kons alias <name=val>   - Create command shortcut alias\r\n" +
-                "  kons notify <t> <m>     - Send native system notification\r\n" +
-                "  kons toast <msg>        - Display screen toast message\r\n" +
-                "  kons update             - Check & install Konsole OS OTA updates\r\n" +
-                "  kons switch <termux|konsole> - Toggle Fish shell OS integration mode\r\n" +
+                "  kons plugins            - Open Launchable Plugins & GitHub Templates UI\r\n" +
+                "  kons plugin <list|launch|templates|install|remove>\r\n" +
+                "  kons shade <open|close|set|unset|status>\r\n" +
+                "  kons customize <reload|list|set|reset> - Live XML ($konsole/customize/*.xml)\r\n" +
+                "  kons macro / macro <lab|list|trigger|notify|toast|flash|tap|swipe>\r\n" +
+                "  kons setup-fish | kons apps | kons palette | kons sys | kons hud <on|off>\r\n" +
+                "  kons search | kons install | kons run | kons remove | kons list | kons update\r\n" +
+                "  kons set <k=v> | kons alias <k=v> | kons switch <termux|konsole>\r\n" +
                 "\033[1;36m=====================================================================\033[0m\r\n";
         writeToTerminal(session, help);
     }
@@ -1733,143 +2474,6 @@ public class KonsoleCommandDispatcher {
                     writeToTerminal(session, "\r\n\033[1;32m[Wi-Fi]\033[0m Connecting to network '" + targetSsid + "'...\r\n");
                 }
                 return true;
-        }
-        return true;
-    }
-
-    private boolean handleMusic(Context context, TerminalSession session, String[] parts) {
-        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: music play|pause|stop|ls\r\n");
-            return true;
-        }
-
-        String sub = parts[1].toLowerCase();
-        switch (sub) {
-            case "play":
-            case "pause":
-                if (am != null) {
-                    KeyEvent event = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
-                    am.dispatchMediaKeyEvent(event);
-                    am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-                }
-                writeToTerminal(session, "\r\n\033[1;32m[Music]\033[0m Sent Play/Pause media key.\r\n");
-                return true;
-
-            case "stop":
-                if (am != null) {
-                    am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_STOP));
-                    am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_STOP));
-                }
-                writeToTerminal(session, "\r\n\033[1;33m[Music]\033[0m Sent Stop media key.\r\n");
-                return true;
-
-            case "ls":
-                File musicDir = new File("/storage/emulated/0/Music");
-                writeToTerminal(session, "\r\n\033[1;36m[Local Music Files (/storage/emulated/0/Music)]\033[0m\r\n");
-                if (musicDir.exists() && musicDir.isDirectory()) {
-                    File[] tracks = musicDir.listFiles();
-                    if (tracks != null && tracks.length > 0) {
-                        for (File f : tracks) {
-                            writeToTerminal(session, " - " + f.getName() + "\r\n");
-                        }
-                    } else {
-                        writeToTerminal(session, " (No music files found)\r\n");
-                    }
-                } else {
-                    writeToTerminal(session, " (Music directory empty or not accessible)\r\n");
-                }
-                return true;
-        }
-        return true;
-    }
-
-    private boolean handleCall(Context context, TerminalSession session, String[] parts) {
-        if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: call <number or contact name>\r\n");
-            return true;
-        }
-
-        StringBuilder target = new StringBuilder();
-        for (int i = 1; i < parts.length; i++) target.append(parts[i]).append(" ");
-        String query = target.toString().trim();
-
-        String number = query;
-        if (!query.matches("^[0-9+#*\\s-]+$")) {
-            // Resolve contact name via ContactsContract
-            number = resolveContactNumber(context, query);
-        }
-
-        if (number != null && !number.isEmpty()) {
-            writeToTerminal(session, "\r\n\033[1;32m[Call]\033[0m Initiating call to: \033[1;36m" + number + "\033[0m...\r\n");
-            try {
-                Intent callIntent = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number)));
-                callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(callIntent);
-            } catch (SecurityException e) {
-                writeToTerminal(session, "\r\n\033[1;31m[Call]\033[0m Permission CALL_PHONE required.\r\n");
-            } catch (Exception e) {
-                writeToTerminal(session, "\r\n\033[1;31m[Call]\033[0m Error dialing: " + e.getMessage() + "\r\n");
-            }
-        } else {
-            writeToTerminal(session, "\r\n\033[1;31m[Call]\033[0m Contact '" + query + "' not found.\r\n");
-        }
-        return true;
-    }
-
-    private String resolveContactNumber(Context context, String nameQuery) {
-        ContentResolver cr = context.getContentResolver();
-        Cursor cursor = cr.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                new String[]{ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME},
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?",
-                new String[]{"%" + nameQuery + "%"}, null);
-        if (cursor != null) {
-            if (cursor.moveToFirst()) {
-                int numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
-                String num = cursor.getString(numIdx);
-                cursor.close();
-                return num;
-            }
-            cursor.close();
-        }
-        return null;
-    }
-
-    private boolean handleContacts(Context context, TerminalSession session, String[] parts) {
-        if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: contact ls|search <query>\r\n");
-            return true;
-        }
-
-        String sub = parts[1].toLowerCase();
-        String q = parts.length >= 3 ? parts[2] : "";
-
-        ContentResolver cr = context.getContentResolver();
-        try {
-            Cursor cursor = cr.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                    new String[]{ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER},
-                    q.isEmpty() ? null : ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?",
-                    q.isEmpty() ? null : new String[]{"%" + q + "%"},
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC");
-
-            writeToTerminal(session, "\r\n\033[1;36m[Device Contacts]\033[0m\r\n");
-            if (cursor != null) {
-                int count = 0;
-                int nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
-                int numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
-                while (cursor.moveToNext() && count < 50) {
-                    String name = cursor.getString(nameIdx);
-                    String num = cursor.getString(numIdx);
-                    writeToTerminal(session, " - " + name + ": " + num + "\r\n");
-                    count++;
-                }
-                cursor.close();
-                if (count == 0) writeToTerminal(session, " (No matching contacts found)\r\n");
-            } else {
-                writeToTerminal(session, " (No contacts available)\r\n");
-            }
-        } catch (SecurityException e) {
-            writeToTerminal(session, "\r\n\033[1;31m[Contacts]\033[0m READ_CONTACTS permission required.\r\n");
         }
         return true;
     }
@@ -2045,44 +2649,6 @@ public class KonsoleCommandDispatcher {
         return true;
     }
 
-    private boolean handleBeep(TerminalSession session, String[] parts) {
-        if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: beep <pattern> (0=beep, 1=double-beep, -=1s silence, -N=N s silence)\r\n");
-            return true;
-        }
-
-        new Thread(() -> {
-            try {
-                ToneGenerator toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
-                String[] tokens = parts[1].split(",");
-                for (String t : tokens) {
-                    t = t.trim();
-                    if (t.equals("0")) {
-                        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
-                        Thread.sleep(200);
-                    } else if (t.equals("1")) {
-                        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 100);
-                        Thread.sleep(150);
-                        toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 100);
-                        Thread.sleep(200);
-                    } else if (t.startsWith("-")) {
-                        int seconds = 1;
-                        if (t.length() > 1) {
-                            try { seconds = Math.abs(Integer.parseInt(t.substring(1))); } catch (Exception ignored) {}
-                        }
-                        Thread.sleep(seconds * 1000L);
-                    }
-                }
-                toneGen.release();
-            } catch (Exception e) {
-                Log.e(TAG, "Beep execution error", e);
-            }
-        }).start();
-
-        writeToTerminal(session, "\r\n\033[1;32m[Beep]\033[0m Tone pattern playing...\r\n");
-        return true;
-    }
-
     private boolean handleBrightness(Context context, TerminalSession session, String[] parts) {
         if (parts.length < 2) {
             writeToTerminal(session, "\r\nUsage: brightness <0-100|auto>\r\n");
@@ -2126,78 +2692,39 @@ public class KonsoleCommandDispatcher {
         return true;
     }
 
-    private boolean handleWallpaper(Context context, TerminalSession session, String[] parts) {
-        if (parts.length < 2) {
-            writeToTerminal(session, "\r\nUsage: wallpaper <image-path>\r\n");
-            return true;
-        }
-
-        File imgFile = new File(parts[1]);
-        if (imgFile.exists()) {
-            try {
-                Bitmap bitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
-                WallpaperManager wm = WallpaperManager.getInstance(context);
-                wm.setBitmap(bitmap);
-                writeToTerminal(session, "\r\n\033[1;32m[Wallpaper]\033[0m Wallpaper updated successfully!\r\n");
-            } catch (Exception e) {
-                writeToTerminal(session, "\r\n\033[1;31m[Wallpaper]\033[0m Failed setting wallpaper: " + e.getMessage() + "\r\n");
-            }
-        } else {
-            writeToTerminal(session, "\r\n\033[1;31m[Wallpaper]\033[0m File not found: " + parts[1] + "\r\n");
-        }
-        return true;
-    }
-
     private boolean handleLock(Context context, TerminalSession session, String rawLine, String[] parts) {
         KonsoleConfigManager configMgr = KonsoleConfigManager.getInstance();
+        KonsoleSecurityVault vault = KonsoleSecurityVault.getInstance();
 
         if (parts.length >= 2) {
             String arg = parts[1].toLowerCase();
-            if (arg.equals("--sudo")) {
-                if (!configMgr.hasSudoPassword()) {
-                    writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m No sudo password set. Set a password first using:\r\n  \033[1;36mlock --sudo-set <your-password>\033[0m\r\n");
-                    return true;
-                }
-                configMgr.setSudoLocked(true);
+            if (arg.equals("--panic")) {
+                String summary = vault.triggerPanicLockdown(context);
                 startKioskLockdown(context, session);
-                writeToTerminal(session, "\r\n\033[1;31m[KONSOLE OS SUDO LOCKED]\033[0m All commands locked. Enter password to unlock:\r\n");
+                writeToTerminal(session, "\r\n\033[1;31m[PANIC LOCKDOWN]\033[0m " + summary + "\r\n");
                 return true;
-            } else if (arg.equals("--sudo-set")) {
-                if (parts.length < 3) {
-                    writeToTerminal(session, "\r\nUsage: lock --sudo-set <custom-password>\r\n");
+            } else if (arg.equals("--sudo")) {
+                if (!vault.hasPassphrase(context)) {
+                    writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m No vault passphrase set. Set one first:\r\n  \033[1;36mlock --pass-set <your-passphrase>\033[0m\r\n");
                     return true;
                 }
-                String customPass = parts[2];
-                String rescueHash = configMgr.setSudoPassword(customPass);
-
-                // Copy rescue hash to Clipboard
-                try {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null) {
-                        android.content.ClipData clip = android.content.ClipData.newPlainText("Konsole Rescue Hash", rescueHash);
-                        clipboard.setPrimaryClip(clip);
-                    }
-                } catch (Exception ignored) {}
-
-                writeToTerminal(session, "\r\n\033[1;32m[Konsole OS Sudo]\033[0m Sudo password set successfully!\r\n" +
-                        " Rescue Hash: \033[1;36m" + rescueHash + "\033[0m\r\n" +
-                        " \033[1;33m(Rescue hash copied to clipboard! Save it in a safe place!)\033[0m\r\n");
+                vault.setLocked(context, true);
+                startKioskLockdown(context, session);
+                writeToTerminal(session, "\r\n\033[1;31m[KONSOLE VAULT LOCKED]\033[0m All commands locked. Enter passphrase to unlock:\r\n");
                 return true;
-            } else if (arg.equals("--sudo-reset")) {
+            } else if (arg.equals("--pass-set") || arg.equals("--sudo-set")) {
                 if (parts.length < 3) {
-                    writeToTerminal(session, "\r\nUsage: lock --sudo-reset <rescue-hash>\r\n");
+                    writeToTerminal(session, "\r\nUsage: lock --pass-set <min-4-char-passphrase>\r\n");
                     return true;
                 }
-                String hashInput = parts[2];
-                if (configMgr.resetSudoPasswordWithHash(hashInput)) {
-                    stopKioskLockdown(context);
-                    writeToTerminal(session, "\r\n\033[1;32m[Konsole OS Sudo]\033[0m Sudo password reset successfully! Lock screen removed.\r\n");
-                } else {
-                    writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m Invalid rescue hash.\r\n");
-                }
+                boolean ok = vault.setPassphrase(context, parts[2]);
+                writeToTerminal(session, ok
+                        ? "\r\n\033[1;32m[Konsole Vault]\033[0m PBKDF2 passphrase saved in app-private storage (AndroidKeyStore).\r\n"
+                        : "\r\n\033[1;31m[Konsole Vault]\033[0m Passphrase must be at least 4 characters.\r\n");
                 return true;
             } else if (arg.equals("--sudo-redo")) {
-                writeToTerminal(session, "\r\n\033[1;31m[Sudo Redo / Factory Reset]\033[0m Resetting all Konsole OS files and configurations...\r\n");
+                writeToTerminal(session, "\r\n\033[1;31m[Factory Reset]\033[0m Resetting Konsole OS files and clearing Vault...\r\n");
+                vault.clearPassphraseAndUnlock(context);
                 configMgr.resetSudoRedoFactoryReset();
                 stopKioskLockdown(context);
                 writeToTerminal(session, "\033[1;32m[Konsole OS]\033[0m Factory reset complete!\r\n");
@@ -2212,35 +2739,11 @@ public class KonsoleCommandDispatcher {
     private void startKioskLockdown(Context context, TerminalSession session) {
         if (!(context instanceof android.app.Activity)) return;
         android.app.Activity activity = (android.app.Activity) context;
-        android.app.admin.DevicePolicyManager dpm = (android.app.admin.DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
-        String pkgName = context.getPackageName();
-
-        boolean isDeviceOwner = false;
-        if (dpm != null) {
-            try {
-                isDeviceOwner = dpm.isDeviceOwnerApp(pkgName);
-            } catch (Exception ignored) {}
-        }
-
-        if (isDeviceOwner && dpm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                ComponentName adminComp = new ComponentName(context, KonsoleDeviceAdminReceiver.class);
-                dpm.setLockTaskPackages(adminComp, new String[]{pkgName});
-                activity.startLockTask();
-                writeToTerminal(session, "\r\n\033[1;32m[True Kiosk Lock Active]\033[0m Status bar, Notification shade, Home & Recents buttons completely disabled.\r\n");
-                return;
-            } catch (Exception e) {
-                Log.e(TAG, "Device Owner Kiosk Lock failed", e);
-            }
-        }
-
         try {
             activity.startLockTask();
-            writeToTerminal(session, "\r\n\033[1;33m[Konsole OS Screen Lock Active]\033[0m\r\n" +
-                    " \033[1;36mTo enable True Kiosk Lock (blocking Notification Shade & Home button completely), grant Device Owner via ADB:\033[0m\r\n" +
-                    " adb shell dpm set-device-owner " + TermuxConstants.TERMUX_PACKAGE_NAME + "/.app.konsole.KonsoleDeviceAdminReceiver\r\n");
+            writeToTerminal(session, "\r\n\033[1;33m[Konsole OS Screen Pinning Active]\033[0m Hold Back+Recents or unpin in Android OS to exit pinning.\r\n");
         } catch (Exception e) {
-            writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m Could not start screen lock: " + e.getMessage() + "\r\n");
+            writeToTerminal(session, "\r\n\033[1;31m[Lock Error]\033[0m Could not start screen pinning: " + e.getMessage() + "\r\n");
         }
     }
 
@@ -2277,7 +2780,7 @@ public class KonsoleCommandDispatcher {
     private boolean handleClearHome(TerminalSession session) {
         if (session != null) {
             session.appendToEmulator("\033[H\033[2J");
-            writeToTerminal(session, "\033[1;32mKonsole OS v1.0.0-35mos\033[0m (" + TermuxConstants.TERMUX_PACKAGE_NAME + ")\r\nType '\033[1;36mkons help\033[0m' for available commands.\r\n");
+            writeToTerminal(session, "\033[1;32mKonsole OS v1.0.0-premier\033[0m (" + TermuxConstants.TERMUX_PACKAGE_NAME + ")\r\nType '\033[1;36mkons help\033[0m' for available commands.\r\n");
         }
         return true;
     }

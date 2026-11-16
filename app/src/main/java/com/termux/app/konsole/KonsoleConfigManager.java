@@ -18,6 +18,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,13 +35,19 @@ public class KonsoleConfigManager {
 
     public static final String KONSOLE_ROOT_PATH = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Konsole";
     public static final String CUSTOMIZE_PATH = KONSOLE_ROOT_PATH + "/customize";
+    public static final String PROFILES_PATH = CUSTOMIZE_PATH + "/profiles";
     public static final String BIN_PATH = KONSOLE_ROOT_PATH + "/bin";
+    public static final String CAPTURES_PATH = KONSOLE_ROOT_PATH + "/captures";
 
     public static final String FILE_UI_XML = CUSTOMIZE_PATH + "/ui.xml";
     public static final String FILE_BEHAVIOR_XML = CUSTOMIZE_PATH + "/behavior.xml";
+    public static final String FILE_SHADE_XML = CUSTOMIZE_PATH + "/shade.xml";
+    public static final String FILE_EXPERIENCE_XML = CUSTOMIZE_PATH + "/experience.xml";
+    public static final String FILE_DESKTOP_XML = CUSTOMIZE_PATH + "/desktop.xml";
     public static final String FILE_ALIASES_XML = CUSTOMIZE_PATH + "/aliases.xml";
     public static final String FILE_VARIABLES_XML = CUSTOMIZE_PATH + "/variables.xml";
     public static final String FILE_INIT_KONS = CUSTOMIZE_PATH + "/init.kons";
+    public static final String FILE_CUSTOMIZE_README = CUSTOMIZE_PATH + "/README.md";
     public static final String FILE_VARIABLE_TXT = KONSOLE_ROOT_PATH + "/variable.txt";
 
     private static KonsoleConfigManager sInstance;
@@ -49,6 +56,11 @@ public class KonsoleConfigManager {
     private final Map<String, String> mUserVariables = new ConcurrentHashMap<>();
     private final Map<String, String> mUiProperties = new ConcurrentHashMap<>();
     private final Map<String, String> mBehaviorProperties = new ConcurrentHashMap<>();
+    private final Map<String, String> mShadeProperties = new ConcurrentHashMap<>();
+    private final Map<String, String> mExperienceProperties = new ConcurrentHashMap<>();
+    private final Map<String, String> mDesktopProperties = new ConcurrentHashMap<>();
+    private final Map<String, String> mActiveProfileProperties = new ConcurrentHashMap<>();
+    private volatile String mActiveProfileName = "default";
 
     private KonsoleConfigManager() {
     }
@@ -80,10 +92,12 @@ public class KonsoleConfigManager {
                 Log.w(TAG, "Primary shared storage is not mounted; deferring Konsole storage initialization");
                 return;
             }
+            KonsoleSecurityVault.migrateRemoveLegacyExternalSudoXml();
             ensureDirectories();
             ensureDefaultXmlFiles();
             loadAllConfigurations();
             generateVariableDocumentation();
+            KonsolePluginManager.getInstance().ensureSeedFiles(context);
         } catch (Exception e) {
             Log.e(TAG, "Error initializing KonsoleConfigManager", e);
         }
@@ -99,7 +113,9 @@ public class KonsoleConfigManager {
         String[] dirs = new String[] {
             KONSOLE_ROOT_PATH,
             CUSTOMIZE_PATH,
+            PROFILES_PATH,
             BIN_PATH,
+            CAPTURES_PATH,
             PACKAGES_PATH,
             INSTALLED_PACKAGES_PATH,
             DOWNLOADS_PATH,
@@ -141,13 +157,29 @@ public class KonsoleConfigManager {
         createFileIfNotExist(FILE_UI_XML,
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
                 "<ui>\n" +
-                "    <textColor>#00FF66</textColor>\n" +
+                "    <backgroundColor>#0B0F14</backgroundColor>\n" +
+                "    <terminalBackgroundColor>#000000</terminalBackgroundColor>\n" +
+                "    <surfaceColor>#0D1117</surfaceColor>\n" +
+                "    <textColor>#00FF88</textColor>\n" +
                 "    <promptColor>#00E5FF</promptColor>\n" +
+                "    <accentColor>#00E5FF</accentColor>\n" +
+                "    <warnColor>#FFD166</warnColor>\n" +
                 "    <fontSize>14</fontSize>\n" +
+                "    <fontFamily>monospace</fontFamily>\n" +
                 "    <cursorStyle>BLOCK</cursorStyle>\n" +
                 "    <transparency>0.95</transparency>\n" +
                 "    <gridColumns>4</gridColumns>\n" +
+                "    <drawerWidthDp>268</drawerWidthDp>\n" +
                 "    <statusBarVisible>true</statusBarVisible>\n" +
+                "    <hudPosition>top</hudPosition>\n" +
+                "    <hudShowMode>true</hudShowMode>\n" +
+                "    <hudShowTelemetry>true</hudShowTelemetry>\n" +
+                "    <hudShowDash>true</hudShowDash>\n" +
+                "    <hudShowApps>true</hudShowApps>\n" +
+                "    <hudShowPlugins>true</hudShowPlugins>\n" +
+                "    <hudShowCmd>true</hudShowCmd>\n" +
+                "    <extraKeysVisible>true</extraKeysVisible>\n" +
+                "    <fullscreen>false</fullscreen>\n" +
                 "</ui>\n");
 
         createFileIfNotExist(FILE_BEHAVIOR_XML,
@@ -156,8 +188,93 @@ public class KonsoleConfigManager {
                 "    <mode>konsole</mode>\n" +
                 "    <autoCompleteKey>RIGHT_ARROW</autoCompleteKey>\n" +
                 "    <hapticFeedback>true</hapticFeedback>\n" +
-                "    <greeting>Welcome to Konsole OS v1.0. Type 'kons help' for commands.</greeting>\n" +
+                "    <greeting>Welcome to Konsole OS v1.0.0-premier. Type 'kons help' for commands.</greeting>\n" +
+                "    <promptFormat>konsole@os</promptFormat>\n" +
+                "    <defaultShell>fish</defaultShell>\n" +
+                "    <startupCommands></startupCommands>\n" +
                 "</behavior>\n");
+
+        createFileIfNotExist(FILE_SHADE_XML,
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<shade>\n" +
+                "    <enabled>true</enabled>\n" +
+                "    <replaceSystemShade>false</replaceSystemShade>\n" +
+                "    <swipeDownToOpen>true</swipeDownToOpen>\n" +
+                "    <triggerHeightDp>22</triggerHeightDp>\n" +
+                "    <backgroundColor>#F2090D12</backgroundColor>\n" +
+                "    <cardColor>#101822</cardColor>\n" +
+                "    <tileActiveColor>#00E5FF</tileActiveColor>\n" +
+                "    <tileInactiveColor>#131C27</tileInactiveColor>\n" +
+                "    <textColor>#E6EDF3</textColor>\n" +
+                "    <tileColumns>4</tileColumns>\n" +
+                "    <blurDimAmount>0.72</blurDimAmount>\n" +
+                "    <showClock>true</showClock>\n" +
+                "    <showTelemetryStrip>true</showTelemetryStrip>\n" +
+                "    <showBrightnessSlider>true</showBrightnessSlider>\n" +
+                "    <showMediaControls>false</showMediaControls>\n" +
+                "    <showNotifications>true</showNotifications>\n" +
+                "    <maxNotifications>15</maxNotifications>\n" +
+                "    <tiles>workstation,wifi,bluetooth,pcap,daemon_sshd,daemon_kex,mode,plugins,dashboard,panic,settings,flashlight</tiles>\n" +
+                "</shade>\n");
+
+        createFileIfNotExist(FILE_EXPERIENCE_XML,
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<experience>\n" +
+                "    <animationSpeed>1.0</animationSpeed>\n" +
+                "    <doubleTapAction>command_palette</doubleTapAction>\n" +
+                "    <swipeDownAction>open_shade</swipeDownAction>\n" +
+                "    <swipeUpAction>extra_keys</swipeUpAction>\n" +
+                "    <longPressHudAction>open_shade</longPressHudAction>\n" +
+                "    <backButtonAction>newline_in_konsole</backButtonAction>\n" +
+                "    <autoOpenKeyboard>true</autoOpenKeyboard>\n" +
+                "    <keepScreenOn>false</keepScreenOn>\n" +
+                "    <confirmSessionKill>true</confirmSessionKill>\n" +
+                "    <showBootBanner>true</showBootBanner>\n" +
+                "    <pluginAutoLoadExtensions>true</pluginAutoLoadExtensions>\n" +
+                "</experience>\n");
+
+        createFileIfNotExist(FILE_DESKTOP_XML,
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<desktop>\n" +
+                "    <desktopAutoSwitch>true</desktopAutoSwitch>\n" +
+                "    <fontSize>13</fontSize>\n" +
+                "    <hudPosition>top</hudPosition>\n" +
+                "    <extraKeysVisible>false</extraKeysVisible>\n" +
+                "    <drawerWidthDp>320</drawerWidthDp>\n" +
+                "    <hardwareKeymap>workstation</hardwareKeymap>\n" +
+                "</desktop>\n");
+
+        createFileIfNotExist(PROFILES_PATH + "/default.xml",
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<profile>\n" +
+                "    <name>default</name>\n" +
+                "    <description>Balanced Workstation &amp; Shell Profile</description>\n" +
+                "    <promptColor>#00E5FF</promptColor>\n" +
+                "    <accentColor>#00E5FF</accentColor>\n" +
+                "    <textColor>#00FF88</textColor>\n" +
+                "</profile>\n");
+
+        createFileIfNotExist(PROFILES_PATH + "/lab.xml",
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<profile>\n" +
+                "    <name>lab</name>\n" +
+                "    <description>NetHunter-Style Security &amp; Diagnostics Lab</description>\n" +
+                "    <promptColor>#FF5252</promptColor>\n" +
+                "    <accentColor>#FF5252</accentColor>\n" +
+                "    <textColor>#E6EDF3</textColor>\n" +
+                "    <keepScreenOn>true</keepScreenOn>\n" +
+                "</profile>\n");
+
+        createFileIfNotExist(PROFILES_PATH + "/stealth.xml",
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+                "<profile>\n" +
+                "    <name>stealth</name>\n" +
+                "    <description>Low-distraction monochrome stealth profile</description>\n" +
+                "    <promptColor>#8B949E</promptColor>\n" +
+                "    <accentColor>#9FB0C3</accentColor>\n" +
+                "    <textColor>#C9D1D9</textColor>\n" +
+                "    <statusBarVisible>false</statusBarVisible>\n" +
+                "</profile>\n");
 
         createFileIfNotExist(FILE_ALIASES_XML,
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
@@ -176,6 +293,17 @@ public class KonsoleConfigManager {
                 "#!/bin/bash/kons\n" +
                 "# Konsole OS Startup Script\n" +
                 "echo \"Booting Konsole OS...\"\n");
+
+        createFileIfNotExist(FILE_CUSTOMIZE_README,
+                "# Konsole OS XML Customization Guide ($konsole/customize)\n\n" +
+                "Edit any XML file below and run `kons reload` (or reopen the app) to apply changes:\n\n" +
+                "- `ui.xml`: Colors (`backgroundColor`, `terminalBackgroundColor`, `surfaceColor`, `textColor`, `promptColor`, `accentColor`), `fontSize`, `fontFamily` (`monospace`|`sans-serif`|`serif`|ttf path), `cursorStyle` (`BLOCK`|`UNDERLINE`|`BAR`), `transparency`, `gridColumns`, `hudPosition` (`top`|`bottom`), `hudShow*`, `extraKeysVisible`, `fullscreen`.\n" +
+                "- `shade.xml`: Custom replacement notification/control shade (`enabled`, `replaceSystemShade`, `swipeDownToOpen`, `triggerHeightDp`, `tileColumns`, `tiles`, `backgroundColor`, `tileActiveColor`, `showClock`, `showTelemetryStrip`, `showBrightnessSlider`, `showMediaControls`, `showNotifications`).\n" +
+                "- `experience.xml`: Gestures and UX (`animationSpeed`, `doubleTapAction`, `swipeDownAction`, `swipeUpAction`, `longPressHudAction`, `backButtonAction`, `autoOpenKeyboard`, `keepScreenOn`, `confirmSessionKill`).\n" +
+                "- `desktop.xml`: External display / DeX overrides (`desktopAutoSwitch`, `fontSize`, `hudPosition`, `extraKeysVisible`, `drawerWidthDp`).\n" +
+                "- `profiles/*.xml`: Workspace profiles (`default`, `lab`, `stealth`) activated with `kons profile <name>`.\n" +
+                "- `behavior.xml`: Shell `mode` (`konsole`|`termux`), `hapticFeedback`, `greeting`, `promptFormat`, `startupCommands`.\n" +
+                "- `aliases.xml` & `variables.xml`: Persistent Fish/Konsole aliases and `$var` definitions.\n");
     }
 
     private void createFileIfNotExist(String filePath, String content) {
@@ -186,10 +314,79 @@ public class KonsoleConfigManager {
     }
 
     public synchronized void loadAllConfigurations() {
+        ensureDirectories();
         loadAliases();
         loadVariables();
         loadPropertiesFromXml(FILE_UI_XML, mUiProperties);
         loadPropertiesFromXml(FILE_BEHAVIOR_XML, mBehaviorProperties);
+        loadPropertiesFromXml(FILE_SHADE_XML, mShadeProperties);
+        loadPropertiesFromXml(FILE_EXPERIENCE_XML, mExperienceProperties);
+        loadPropertiesFromXml(FILE_DESKTOP_XML, mDesktopProperties);
+        loadActiveProfileOverrides();
+    }
+
+    public synchronized List<String> listProfiles() {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        File dir = new File(PROFILES_PATH);
+        if (!dir.isDirectory()) return list;
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".xml"));
+        if (files != null) {
+            for (File f : files) {
+                list.add(f.getName().substring(0, f.getName().length() - 4));
+            }
+            java.util.Collections.sort(list);
+        }
+        return list;
+    }
+
+    public String getActiveProfile() {
+        return mActiveProfileName;
+    }
+
+    public synchronized boolean setActiveProfile(String profileName) {
+        if (profileName == null || profileName.trim().isEmpty()) return false;
+        String clean = profileName.trim().replaceAll("[^a-zA-Z0-9._-]", "");
+        File profileFile = new File(PROFILES_PATH, clean + ".xml");
+        if (!profileFile.isFile()) return false;
+        mActiveProfileName = clean;
+        loadAllConfigurations();
+        return true;
+    }
+
+    private void loadActiveProfileOverrides() {
+        mActiveProfileProperties.clear();
+        File profileFile = new File(PROFILES_PATH, mActiveProfileName + ".xml");
+        if (!profileFile.isFile()) return;
+        loadPropertiesFromXml(profileFile.getAbsolutePath(), mActiveProfileProperties);
+        for (Map.Entry<String, String> entry : mActiveProfileProperties.entrySet()) {
+            String k = entry.getKey();
+            if ("name".equals(k) || "description".equals(k)) continue;
+            if ("keepScreenOn".equals(k)) {
+                mExperienceProperties.put(k, entry.getValue());
+            } else {
+                mUiProperties.put(k, entry.getValue());
+            }
+        }
+    }
+
+    public String getDesktopProperty(String key, String def) {
+        return mDesktopProperties.getOrDefault(key, def);
+    }
+
+    public boolean getDesktopBoolean(String key, boolean def) {
+        String v = mDesktopProperties.get(key);
+        if (v == null || v.trim().isEmpty()) return def;
+        return "true".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
+    }
+
+    public int getDesktopInt(String key, int def, int min, int max) {
+        try {
+            String v = mDesktopProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            return Math.max(min, Math.min(max, Integer.parseInt(v.trim())));
+        } catch (Exception ignored) {
+            return def;
+        }
     }
 
     private void loadAliases() {
@@ -302,6 +499,61 @@ public class KonsoleConfigManager {
         savePropertiesToXml(FILE_UI_XML, "ui", mUiProperties);
     }
 
+    public synchronized void setBehaviorProperty(String key, String value) {
+        if (key == null || key.trim().isEmpty()) return;
+        mBehaviorProperties.put(key.trim(), value != null ? value.trim() : "");
+        savePropertiesToXml(FILE_BEHAVIOR_XML, "behavior", mBehaviorProperties);
+    }
+
+    public synchronized void setShadeProperty(String key, String value) {
+        if (key == null || key.trim().isEmpty()) return;
+        mShadeProperties.put(key.trim(), value != null ? value.trim() : "");
+        savePropertiesToXml(FILE_SHADE_XML, "shade", mShadeProperties);
+    }
+
+    public synchronized void setExperienceProperty(String key, String value) {
+        if (key == null || key.trim().isEmpty()) return;
+        mExperienceProperties.put(key.trim(), value != null ? value.trim() : "");
+        savePropertiesToXml(FILE_EXPERIENCE_XML, "experience", mExperienceProperties);
+    }
+
+    public synchronized boolean setCustomizeProperty(String category, String key, String value) {
+        if (category == null || key == null) return false;
+        switch (category.trim().toLowerCase()) {
+            case "ui":
+                setUiProperty(key, value);
+                return true;
+            case "behavior":
+                setBehaviorProperty(key, value);
+                return true;
+            case "shade":
+                setShadeProperty(key, value);
+                return true;
+            case "experience":
+                setExperienceProperty(key, value);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public synchronized void resetDefaultCustomizeXml() {
+        String[] xmlFiles = new String[]{
+                FILE_UI_XML, FILE_BEHAVIOR_XML, FILE_SHADE_XML, FILE_EXPERIENCE_XML, FILE_DESKTOP_XML, FILE_CUSTOMIZE_README
+        };
+        for (String path : xmlFiles) {
+            File f = new File(path);
+            if (f.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        }
+        mActiveProfileName = "default";
+        ensureDirectories();
+        ensureDefaultXmlFiles();
+        loadAllConfigurations();
+    }
+
     private void savePropertiesToXml(String filePath, String rootTag, Map<String, String> properties) {
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<").append(rootTag).append(">\n");
@@ -315,7 +567,119 @@ public class KonsoleConfigManager {
     }
 
     public boolean isStatusBarVisible() {
-        return !"false".equalsIgnoreCase(mUiProperties.getOrDefault("statusBarVisible", "true"));
+        return getUiBoolean("statusBarVisible", true);
+    }
+
+    public String getUiProperty(String key, String def) {
+        return mUiProperties.getOrDefault(key, def);
+    }
+
+    public boolean getUiBoolean(String key, boolean def) {
+        String v = mUiProperties.get(key);
+        if (v == null || v.trim().isEmpty()) return def;
+        return "true".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
+    }
+
+    public int getUiInt(String key, int def, int min, int max) {
+        try {
+            String v = mUiProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            int parsed = Integer.parseInt(v.trim());
+            return Math.max(min, Math.min(max, parsed));
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    public float getUiFloat(String key, float def, float min, float max) {
+        try {
+            String v = mUiProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            float parsed = Float.parseFloat(v.trim());
+            return Math.max(min, Math.min(max, parsed));
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    public int getUiColor(String key, int defColor) {
+        return parseHexColor(mUiProperties.get(key), defColor);
+    }
+
+    public String getShadeProperty(String key, String def) {
+        return mShadeProperties.getOrDefault(key, def);
+    }
+
+    public boolean getShadeBoolean(String key, boolean def) {
+        String v = mShadeProperties.get(key);
+        if (v == null || v.trim().isEmpty()) return def;
+        return "true".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
+    }
+
+    public int getShadeInt(String key, int def, int min, int max) {
+        try {
+            String v = mShadeProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            int parsed = Integer.parseInt(v.trim());
+            return Math.max(min, Math.min(max, parsed));
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    public float getShadeFloat(String key, float def, float min, float max) {
+        try {
+            String v = mShadeProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            float parsed = Float.parseFloat(v.trim());
+            return Math.max(min, Math.min(max, parsed));
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    public int getShadeColor(String key, int defColor) {
+        return parseHexColor(mShadeProperties.get(key), defColor);
+    }
+
+    public String getExperienceProperty(String key, String def) {
+        return mExperienceProperties.getOrDefault(key, def);
+    }
+
+    public boolean getExperienceBoolean(String key, boolean def) {
+        String v = mExperienceProperties.get(key);
+        if (v == null || v.trim().isEmpty()) return def;
+        return "true".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
+    }
+
+    public float getExperienceFloat(String key, float def, float min, float max) {
+        try {
+            String v = mExperienceProperties.get(key);
+            if (v == null || v.trim().isEmpty()) return def;
+            float parsed = Float.parseFloat(v.trim());
+            return Math.max(min, Math.min(max, parsed));
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    public String getBehaviorProperty(String key, String def) {
+        return mBehaviorProperties.getOrDefault(key, def);
+    }
+
+    public boolean getBehaviorBoolean(String key, boolean def) {
+        String v = mBehaviorProperties.get(key);
+        if (v == null || v.trim().isEmpty()) return def;
+        return "true".equalsIgnoreCase(v.trim()) || "1".equals(v.trim());
+    }
+
+    public static int parseHexColor(String hex, int fallback) {
+        if (hex == null || hex.trim().isEmpty()) return fallback;
+        try {
+            return android.graphics.Color.parseColor(hex.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     public synchronized void setBehaviorMode(String mode) {
@@ -344,6 +708,14 @@ public class KonsoleConfigManager {
         return mBehaviorProperties;
     }
 
+    public Map<String, String> getShadeProperties() {
+        return mShadeProperties;
+    }
+
+    public Map<String, String> getExperienceProperties() {
+        return mExperienceProperties;
+    }
+
     public void generateVariableDocumentation() {
         String doc = "=======================================================\n" +
                 "      KONSOLE OS LIVE & CUSTOM SYSTEM VARIABLES        \n" +
@@ -368,63 +740,10 @@ public class KonsoleConfigManager {
         writeTextToFileSafely(FILE_VARIABLE_TXT, doc);
     }
 
-    public static final String FILE_SUDO_XML = CUSTOMIZE_PATH + "/sudo.xml";
-    private boolean mIsSudoLocked = false;
-
-    public synchronized boolean isSudoLocked() {
-        return mIsSudoLocked;
-    }
-
-    public synchronized void setSudoLocked(boolean locked) {
-        this.mIsSudoLocked = locked;
-    }
-
-    public synchronized boolean hasSudoPassword() {
-        File file = new File(FILE_SUDO_XML);
-        return file.exists() && file.length() > 0;
-    }
-
-    public synchronized boolean verifySudoPassword(String rawPassword) {
-        if (!hasSudoPassword()) return false;
-        String passHash = computeSha256(rawPassword);
-        String savedHash = getSudoProperty("passwordHash");
-        return passHash.equalsIgnoreCase(savedHash);
-    }
-
-    public synchronized boolean verifyRescueHash(String rescueHash) {
-        if (!hasSudoPassword()) return false;
-        String savedRescueHash = getSudoProperty("rescueHash");
-        return rescueHash != null && rescueHash.trim().equalsIgnoreCase(savedRescueHash);
-    }
-
-    public synchronized String setSudoPassword(String newPassword) {
-        String passHash = computeSha256(newPassword);
-        String rescueHash = computeSha256("RESCUE_SALT_" + passHash + "_" + newPassword);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<sudo>\n");
-        sb.append("    <passwordHash>").append(escapeXml(passHash)).append("</passwordHash>\n");
-        sb.append("    <rescueHash>").append(escapeXml(rescueHash)).append("</rescueHash>\n");
-        sb.append("</sudo>\n");
-
-        writeTextToFileSafely(FILE_SUDO_XML, sb.toString());
-        return rescueHash;
-    }
-
-    public synchronized boolean resetSudoPasswordWithHash(String rescueHash) {
-        if (verifyRescueHash(rescueHash)) {
-            File sudoFile = new File(FILE_SUDO_XML);
-            if (sudoFile.exists()) sudoFile.delete();
-            mIsSudoLocked = false;
-            return true;
-        }
-        return false;
-    }
-
     public synchronized void resetSudoRedoFactoryReset() {
         File root = new File(KONSOLE_ROOT_PATH);
         deleteDirRecursively(root);
-        mIsSudoLocked = false;
+        KonsoleSecurityVault.migrateRemoveLegacyExternalSudoXml();
         ensureDirectories();
         ensureDefaultXmlFiles();
         loadAllConfigurations();
@@ -440,24 +759,6 @@ public class KonsoleConfigManager {
             }
         }
         fileOrDirectory.delete();
-    }
-
-    private String getSudoProperty(String key) {
-        File file = new File(FILE_SUDO_XML);
-        if (!file.exists()) return null;
-        try {
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            DocumentBuilder db = dbf.newDocumentBuilder();
-            Document doc = db.parse(file);
-            Element root = doc.getDocumentElement();
-            NodeList list = root.getElementsByTagName(key);
-            if (list.getLength() > 0) {
-                return list.item(0).getTextContent().trim();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error reading sudo property " + key, e);
-        }
-        return null;
     }
 
     public String computeSha256(String text) {
