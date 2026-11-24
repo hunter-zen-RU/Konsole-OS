@@ -1,4 +1,4 @@
-# Konsole OS (v1.0.0-premier)
+# Konsole OS (v1.0.0-premier)[latest]
 
 Konsole OS is an advanced Android terminal OS environment, launcher, and professional toolkit combining a touch-friendly Fish terminal, Termux-compatible Linux userspace, Proot distro management, KeX X11 desktop, rootless packet capture, network/RF recon, USB-OTG serial bridge, and hardware-backed KeyStore vault.
 
